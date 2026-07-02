@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+.DS_Store
+Thumbs.db
+
+# Training outputs. All of this is reproducible from the scripts, so the
+# repository stays light and you regenerate it with:
+#     python -m experiments.run_all
+checkpoints/*.pt
+checkpoints/*.npz
+results/logs/*.csv
+results/logs/*.json
+results/plots/*.png
