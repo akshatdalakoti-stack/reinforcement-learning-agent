@@ -57,3 +57,54 @@ class GridWorld:
 
     metadata = {"render_modes": ["ansi", "human"]}
 
+    def __init__(
+        self,
+        layout: list[str] | None = None,
+        slip_prob: float = 0.1,
+        step_reward: float = -0.04,
+        goal_reward: float = 1.0,
+        pit_reward: float = -1.0,
+        max_steps: int = 100,
+        render_mode: str | None = None,
+    ) -> None:
+        self.layout = list(layout or DEFAULT_LAYOUT)
+        self.rows = len(self.layout)
+        self.cols = len(self.layout[0])
+        if any(len(row) != self.cols for row in self.layout):
+            raise ValueError("all layout rows must have the same width")
+
+        self.slip_prob = float(slip_prob)
+        self.step_reward = float(step_reward)
+        self.max_steps = int(max_steps)
+        self.render_mode = render_mode
+
+        self.walls: set[tuple[int, int]] = set()
+        self.terminals: dict[tuple[int, int], float] = {}
+        self.start: tuple[int, int] | None = None
+        for r, row in enumerate(self.layout):
+            for c, ch in enumerate(row):
+                cell = (r, c)
+                if ch == "#":
+                    self.walls.add(cell)
+                elif ch == "G":
+                    self.terminals[cell] = float(goal_reward)
+                elif ch == "P":
+                    self.terminals[cell] = float(pit_reward)
+                elif ch == "S":
+                    self.start = cell
+        if self.start is None:
+            raise ValueError("layout must contain a start cell 'S'")
+
+        self.n_states = self.rows * self.cols
+        self.n_actions = len(ACTION_DELTAS)
+        self.action_names = ACTION_NAMES
+        self.action_deltas = ACTION_DELTAS
+
+        self._agent: tuple[int, int] = self.start
+        self._steps = 0
+        self._rng = np.random.default_rng()
+
+    # --------------------------------------------------------------- geometry
+    def to_index(self, cell: tuple[int, int]) -> int:
+        return cell[0] * self.cols + cell[1]
+
