@@ -1,0 +1,22 @@
+# Core dependencies. Pinned to lower bounds that are known to work; the
+# versions this project was developed and validated against are noted alongside.
+#
+# Deliberately absent: stable-baselines3, ray[rllib], tianshou, cleanrl, or any
+# other package that already implements these algorithms. Gymnasium supplies
+# the simulators, PyTorch supplies autograd, and everything between them is
+# written in this repository.
+
+numpy>=1.24            # validated with 2.5.2
+torch>=2.0             # validated with 2.13.0+cpu
+gymnasium>=0.29        # validated with 1.3.0
+matplotlib>=3.7        # validated with 3.11.1
+
+# CartPole / Acrobot rendering (pulled in by gymnasium[classic-control]).
+pygame>=2.1
+
+# LunarLander (stage 7) needs Box2D. On Windows this builds from source and
+# needs swig plus a C++ toolchain:
+#     pip install swig
+#     pip install box2d-py --no-build-isolation
+# If it will not build, ppo/train.py falls back to CartPole-v1 automatically.
+box2d-py>=2.3.5
