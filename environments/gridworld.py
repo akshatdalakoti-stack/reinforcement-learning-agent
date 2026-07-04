@@ -108,3 +108,9 @@ class GridWorld:
     def to_index(self, cell: tuple[int, int]) -> int:
         return cell[0] * self.cols + cell[1]
 
+    def to_cell(self, index: int) -> tuple[int, int]:
+        return divmod(int(index), self.cols)
+
+    def is_terminal_state(self, index: int) -> bool:
+        return self.to_cell(index) in self.terminals
+
