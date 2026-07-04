@@ -114,3 +114,19 @@ class GridWorld:
     def is_terminal_state(self, index: int) -> bool:
         return self.to_cell(index) in self.terminals
 
+    def walkable_mask(self) -> np.ndarray:
+        """Boolean ``(rows, cols)`` array, False on walls (used for plotting)."""
+        mask = np.ones((self.rows, self.cols), dtype=bool)
+        for r, c in self.walls:
+            mask[r, c] = False
+        return mask
+
+    def _move(self, cell: tuple[int, int], action: int) -> tuple[int, int]:
+        dr, dc = ACTION_DELTAS[action]
+        nxt = (cell[0] + dr, cell[1] + dc)
+        if not (0 <= nxt[0] < self.rows and 0 <= nxt[1] < self.cols):
+            return cell          # walked into the outer edge -> stay put
+        if nxt in self.walls:
+            return cell          # walked into a wall -> stay put
+        return nxt
+
