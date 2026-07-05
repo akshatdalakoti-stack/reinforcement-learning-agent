@@ -130,3 +130,37 @@ class GridWorld:
             return cell          # walked into a wall -> stay put
         return nxt
 
+    # ------------------------------------------------------------------ model
+    def _transition_distribution(
+        self, cell: tuple[int, int], action: int
+    ) -> list[tuple[float, tuple[int, int]]]:
+        """The distribution over next cells as ``(probability, next_cell)`` pairs."""
+        if self.slip_prob <= 0.0:
+            return [(1.0, self._move(cell, action))]
+        # LEFT/RIGHT (0, 1) slip to UP/DOWN (2, 3) and vice versa.
+        perpendicular = (2, 3) if action in (0, 1) else (0, 1)
+        outcomes = [(1.0 - self.slip_prob, self._move(cell, action))]
+        for alt in perpendicular:
+            outcomes.append((self.slip_prob / 2.0, self._move(cell, alt)))
+        return outcomes
+
+    def transition_model(self) -> tuple[np.ndarray, np.ndarray]:
+        """Full ``(P, R)`` tensors for dynamic programming.
+
+        ``P[s, a, s2]`` and ``R[s, a]``.  A planner may use these; the learning
+        agents in this repository never do -- that is exactly the model-free /
+        model-based line the project is drawn along.
+        """
+        P = np.zeros((self.n_states, self.n_actions, self.n_states))
+        R = np.zeros((self.n_states, self.n_actions))
+        for s in range(self.n_states):
+            cell = self.to_cell(s)
+            if cell in self.walls or cell in self.terminals:
+                P[s, :, s] = 1.0     # absorbing; no reward accrues after the end
+                continue
+            for a in range(self.n_actions):
+                for prob, nxt in self._transition_distribution(cell, a):
+                    P[s, a, self.to_index(nxt)] += prob
+                    R[s, a] += prob * (self.step_reward + self.terminals.get(nxt, 0.0))
+        return P, R
+
