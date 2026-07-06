@@ -228,3 +228,34 @@ class GridWorld:
             print(text)
         return text
 
+    def close(self) -> None:  # API parity with Gymnasium
+        return None
+
+
+def value_iteration(
+    env: GridWorld, gamma: float = 0.95, theta: float = 1e-10, max_sweeps: int = 10_000
+) -> tuple[np.ndarray, np.ndarray]:
+    """Solve the MDP exactly, returning ``(Q_star, V_star)``.
+
+    This is *planning*, not learning: it reads ``P`` and ``R`` straight out of
+    the environment.  We use it only as ground truth, to measure how close
+    model-free Q-learning gets to the true optimum::
+
+        V_{k+1}(s) = max_a [ R(s,a) + gamma * sum_s2 P(s2|s,a) V_k(s2) ]
+    """
+    P, R = env.transition_model()
+    absorbing = np.array(
+        [env.to_cell(s) in env.terminals or env.to_cell(s) in env.walls
+         for s in range(env.n_states)]
+    )
+    V = np.zeros(env.n_states)
+    for _ in range(max_sweeps):
+        V_new = (R + gamma * P @ V).max(axis=1)
+        V_new[absorbing] = 0.0
+        if np.max(np.abs(V_new - V)) < theta:
+            V = V_new
+            break
+        V = V_new
+    Q = R + gamma * P @ V
+    Q[absorbing, :] = 0.0
+    return Q, V
