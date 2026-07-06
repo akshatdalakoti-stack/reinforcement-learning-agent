@@ -164,3 +164,36 @@ class GridWorld:
                     R[s, a] += prob * (self.step_reward + self.terminals.get(nxt, 0.0))
         return P, R
 
+    # -------------------------------------------------------------- gym-style
+    def decision_states(self) -> list[int]:
+        """State indices where the agent actually chooses an action.
+
+        Walls cannot be occupied and terminals end the episode, so these are the
+        only states a policy is ever defined on.
+        """
+        return [
+            s
+            for s in range(self.n_states)
+            if self.to_cell(s) not in self.walls and self.to_cell(s) not in self.terminals
+        ]
+
+    def reset(self, seed: int | None = None, options: dict | None = None):
+        """Reset to the start cell, or to a uniformly random one.
+
+        ``options={"exploring_start": True}`` implements *exploring starts*: the
+        episode begins in a random legal cell instead of ``S``.  With a single
+        fixed start, states far from the optimal path are visited so rarely that
+        their Q-values never converge -- exploring starts is the classic fix,
+        and the contrast between the two is the point of the
+        ``experiments/exp1_exploring_starts.py`` ablation.
+        """
+        if seed is not None:
+            self._rng = np.random.default_rng(seed)
+        if options and options.get("exploring_start"):
+            candidates = self.decision_states()
+            self._agent = self.to_cell(int(self._rng.choice(candidates)))
+        else:
+            self._agent = self.start
+        self._steps = 0
+        return self.to_index(self._agent), {"cell": self._agent}
+
