@@ -197,3 +197,34 @@ class GridWorld:
         self._steps = 0
         return self.to_index(self._agent), {"cell": self._agent}
 
+    def step(self, action: int):
+        action = int(action)
+        if not 0 <= action < self.n_actions:
+            raise ValueError(f"action {action} outside 0..{self.n_actions - 1}")
+
+        intended = self._move(self._agent, action)
+        outcomes = self._transition_distribution(self._agent, action)
+        probs = np.array([p for p, _ in outcomes])
+        chosen = outcomes[int(self._rng.choice(len(outcomes), p=probs / probs.sum()))][1]
+
+        self._agent = chosen
+        self._steps += 1
+
+        reward = self.step_reward + self.terminals.get(chosen, 0.0)
+        terminated = chosen in self.terminals
+        truncated = (not terminated) and self._steps >= self.max_steps
+        info = {"cell": chosen, "slipped": chosen != intended}
+        return self.to_index(chosen), reward, terminated, truncated, info
+
+    def render(self) -> str:
+        rows = []
+        for r in range(self.rows):
+            line = []
+            for c in range(self.cols):
+                line.append("A" if (r, c) == self._agent else self.layout[r][c])
+            rows.append(" ".join(line))
+        text = "\n".join(rows)
+        if self.render_mode == "human":
+            print(text)
+        return text
+
