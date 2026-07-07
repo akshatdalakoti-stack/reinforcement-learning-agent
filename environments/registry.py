@@ -43,3 +43,38 @@ def make_env(
     return env
 
 
+def env_spec(env: gym.Env) -> EnvSpec:
+    """Introspect observation/action dimensions, rejecting unsupported spaces."""
+    obs_space, act_space = env.observation_space, env.action_space
+    if not isinstance(obs_space, gym.spaces.Box) or len(obs_space.shape) != 1:
+        raise ValueError(
+            f"expected a flat Box observation space, got {obs_space!r}. "
+            "The agents here assume a vector observation."
+        )
+    if not isinstance(act_space, gym.spaces.Discrete):
+        raise ValueError(
+            f"expected a Discrete action space, got {act_space!r}. "
+            "Every algorithm in this project is written for discrete actions."
+        )
+    spec = env.spec
+    return EnvSpec(
+        env_id=spec.id if spec else "unknown",
+        obs_dim=int(obs_space.shape[0]),
+        n_actions=int(act_space.n),
+        reward_threshold=(spec.reward_threshold if spec else None),
+        max_episode_steps=(spec.max_episode_steps if spec else None),
+    )
+
+
+def env_available(env_id: str) -> bool:
+    """True when ``env_id`` can actually be constructed.
+
+    LunarLander needs the Box2D extra, which has no wheel on some
+    Python/OS combinations.  The PPO script uses this to fall back gracefully
+    rather than dying at import time.
+    """
+    try:
+        gym.make(env_id).close()
+        return True
+    except Exception:
+        return False
