@@ -69,3 +69,49 @@ class QLearningAgent:
         slowly if the environment ever changes.
     """
 
+    def __init__(
+        self,
+        n_states: int,
+        n_actions: int,
+        alpha: float = 0.1,
+        gamma: float = 0.95,
+        epsilon_start: float = 1.0,
+        epsilon_end: float = 0.02,
+        epsilon_decay: float = 0.995,
+        optimistic_init: float = 0.0,
+        alpha_schedule: str = "constant",
+        alpha_power: float = 0.75,
+        seed: int | None = None,
+    ) -> None:
+        self.n_states = int(n_states)
+        self.n_actions = int(n_actions)
+        self.alpha = float(alpha)
+        self.gamma = float(gamma)
+        self.epsilon = float(epsilon_start)
+        self.epsilon_end = float(epsilon_end)
+        self.epsilon_decay = float(epsilon_decay)
+        if alpha_schedule not in ("constant", "visit_count"):
+            raise ValueError("alpha_schedule must be 'constant' or 'visit_count'")
+        self.alpha_schedule = alpha_schedule
+        self.alpha_power = float(alpha_power)
+
+        self.q_table = np.full((self.n_states, self.n_actions), float(optimistic_init))
+        self.rng = np.random.default_rng(seed)
+
+        # Diagnostics: how much the table moved, and how often each cell was hit.
+        self.visit_counts = np.zeros((self.n_states, self.n_actions), dtype=np.int64)
+        self.last_episode_max_delta = 0.0
+
+    # ------------------------------------------------------------------ acting
+    def act(self, state: int, greedy: bool = False) -> int:
+        """Epsilon-greedy action selection -- the exploration/exploitation knob.
+
+        Ties among equally-valued actions are broken uniformly at random rather
+        than by ``argmax``'s first-index rule.  With a zero-initialised table
+        every action ties at the start, and a deterministic ``argmax`` would
+        make the agent march in one direction forever.
+        """
+        if (not greedy) and self.rng.random() < self.epsilon:
+            return int(self.rng.integers(self.n_actions))
+        return self.greedy_action(state)
+
