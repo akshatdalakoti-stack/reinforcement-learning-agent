@@ -1,0 +1,71 @@
+"""Tabular Q-learning.
+
+The whole algorithm is the single update in :meth:`QLearningAgent.update`:
+
+    Q(s,a) <- Q(s,a) + alpha * [ r + gamma * max_a' Q(s',a') - Q(s,a) ]
+                              \\_________________________________/
+                                        TD error, delta
+
+Three ideas are worth naming explicitly, because everything later in this
+repository is a reaction to one of them:
+
+1. **Bootstrapping.**  The target ``r + gamma * max_a' Q(s',a')`` is built from
+   the agent's *own current estimate* of the next state, not from a Monte-Carlo
+   return.  That is what lets learning happen every step instead of every
+   episode -- and it is also what makes deep versions unstable, because the
+   target moves whenever the estimator moves.
+2. **Off-policy learning.**  The ``max`` is over the *greedy* action, while the
+   action actually taken came from an epsilon-greedy behaviour policy.  So the
+   agent explores with one policy and learns the value of another.  This is
+   what makes replay buffers legal in DQN, and what makes them illegal in
+   REINFORCE.
+3. **No model.**  ``P`` and ``R`` are never read.  The agent only ever sees
+   sampled transitions, so it learns from experience rather than from planning.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+
+import numpy as np
+
+
+class QLearningAgent:
+    """A Q-table plus epsilon-greedy exploration.
+
+    Parameters
+    ----------
+    n_states, n_actions:
+        Table dimensions.  The table *is* the agent -- one independent
+        parameter per state-action pair, which is why this approach cannot
+        survive a continuous state space (see :mod:`dqn`).
+    alpha:
+        Learning rate.  In a stochastic environment the TD target is a noisy
+        sample of the true expectation, so ``alpha < 1`` makes the update an
+        exponentially-weighted running average rather than an overwrite.
+    gamma:
+        Discount factor.  Sets the effective planning horizon at ~1/(1-gamma)
+        steps and keeps returns finite.
+    epsilon_start / epsilon_end / epsilon_decay:
+        Multiplicative decay schedule for exploration, applied once per
+        episode.  Early on the agent needs coverage; later it needs to exploit,
+        or the recorded episode reward never reflects what it actually learned.
+    optimistic_init:
+        Value used to fill the table.  Initialising above the achievable return
+        is a second exploration mechanism: unvisited actions look attractive
+        until they are tried and corrected downward.
+    alpha_schedule:
+        ``"constant"`` keeps ``alpha`` fixed; ``"visit_count"`` uses
+        ``alpha_t(s,a) = 1 / n(s,a) ** alpha_power``.
+
+        This matters more than it looks.  Tabular Q-learning is only guaranteed
+        to converge to ``Q*`` when the step sizes satisfy the Robbins-Monro
+        conditions ``sum_t alpha_t = inf`` and ``sum_t alpha_t^2 < inf``.  A
+        constant ``alpha`` violates the second one, so in a *stochastic*
+        environment the estimates never settle -- they keep bouncing around
+        ``Q*`` with a variance floor proportional to ``alpha``.  The decaying
+        schedule satisfies both and does converge; the price is that it adapts
+        slowly if the environment ever changes.
+    """
+
