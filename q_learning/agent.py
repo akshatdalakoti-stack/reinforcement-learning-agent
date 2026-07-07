@@ -115,3 +115,38 @@ class QLearningAgent:
             return int(self.rng.integers(self.n_actions))
         return self.greedy_action(state)
 
+    def greedy_action(self, state: int) -> int:
+        q_values = self.q_table[state]
+        best = np.flatnonzero(q_values == q_values.max())
+        return int(self.rng.choice(best))
+
+    # ---------------------------------------------------------------- learning
+    def update(
+        self,
+        state: int,
+        action: int,
+        reward: float,
+        next_state: int,
+        terminated: bool,
+    ) -> float:
+        """Apply one Bellman backup and return the TD error.
+
+        ``terminated`` (the MDP genuinely ended) must be distinguished from
+        truncation (a time limit fired).  On termination there is no future, so
+        the target is just ``r``.  On truncation the future still exists, we
+        simply stopped watching, so we keep bootstrapping -- treating the two
+        the same teaches the agent that time limits destroy value.
+        """
+        # Count the visit first, so the decaying schedule uses n >= 1.
+        self.visit_counts[state, action] += 1
+        alpha = self._step_size(state, action)
+
+        best_next = 0.0 if terminated else float(self.q_table[next_state].max())
+        td_target = reward + self.gamma * best_next
+        td_error = td_target - self.q_table[state, action]
+
+        self.q_table[state, action] += alpha * td_error
+
+        self.last_episode_max_delta = max(self.last_episode_max_delta, abs(alpha * td_error))
+        return float(td_error)
+
