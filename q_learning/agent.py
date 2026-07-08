@@ -150,3 +150,13 @@ class QLearningAgent:
         self.last_episode_max_delta = max(self.last_episode_max_delta, abs(alpha * td_error))
         return float(td_error)
 
+    def _step_size(self, state: int, action: int) -> float:
+        if self.alpha_schedule == "constant":
+            return self.alpha
+        n = max(1, int(self.visit_counts[state, action]))
+        return 1.0 / (n ** self.alpha_power)
+
+    def decay_epsilon(self) -> float:
+        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
+        return self.epsilon
+
