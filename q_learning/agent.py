@@ -160,3 +160,11 @@ class QLearningAgent:
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
         return self.epsilon
 
+    def start_episode(self) -> None:
+        self.last_episode_max_delta = 0.0
+
+    # ------------------------------------------------------------ introspection
+    def state_values(self) -> np.ndarray:
+        """V(s) = max_a Q(s,a) -- the greedy value implied by the table."""
+        return self.q_table.max(axis=1)
+
