@@ -168,3 +168,17 @@ class QLearningAgent:
         """V(s) = max_a Q(s,a) -- the greedy value implied by the table."""
         return self.q_table.max(axis=1)
 
+    def greedy_policy(self) -> np.ndarray:
+        return self.q_table.argmax(axis=1)
+
+    def coverage(self, valid_states=None) -> float:
+        """Fraction of (state, action) cells ever updated.
+
+        ``valid_states`` restricts the denominator to states the agent can
+        actually stand in.  Without it, walls and terminal cells -- which are
+        never decision points -- would permanently drag the number down and
+        make full coverage look like a bug.
+        """
+        counts = self.visit_counts if valid_states is None else self.visit_counts[valid_states]
+        return float((counts > 0).mean()) if counts.size else 0.0
+
