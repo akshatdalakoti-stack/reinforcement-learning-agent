@@ -182,3 +182,41 @@ class QLearningAgent:
         counts = self.visit_counts if valid_states is None else self.visit_counts[valid_states]
         return float((counts > 0).mean()) if counts.size else 0.0
 
+    # -------------------------------------------------------------- checkpoint
+    def save(self, path: str) -> str:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        np.savez(
+            path,
+            q_table=self.q_table,
+            visit_counts=self.visit_counts,
+            meta=json.dumps(
+                {
+                    "n_states": self.n_states,
+                    "n_actions": self.n_actions,
+                    "alpha": self.alpha,
+                    "alpha_schedule": self.alpha_schedule,
+                    "alpha_power": self.alpha_power,
+                    "gamma": self.gamma,
+                    "epsilon": self.epsilon,
+                }
+            ),
+        )
+        return path if path.endswith(".npz") else path + ".npz"
+
+    @classmethod
+    def load(cls, path: str, seed: int | None = None) -> "QLearningAgent":
+        data = np.load(path, allow_pickle=False)
+        meta = json.loads(str(data["meta"]))
+        agent = cls(
+            n_states=meta["n_states"],
+            n_actions=meta["n_actions"],
+            alpha=meta["alpha"],
+            alpha_schedule=meta.get("alpha_schedule", "constant"),
+            alpha_power=meta.get("alpha_power", 0.75),
+            gamma=meta["gamma"],
+            epsilon_start=meta["epsilon"],
+            seed=seed,
+        )
+        agent.q_table = data["q_table"]
+        agent.visit_counts = data["visit_counts"]
+        return agent
