@@ -44,3 +44,74 @@ by a controlled experiment in `experiments/`.
 
 ---
 
+## Results at a glance
+
+All numbers below are from this repository, on a 12-core CPU (no GPU), seed 0.
+"Final greedy evaluation" runs the deterministic policy with exploration off, on
+seeds the agent never trained on — see [Metrics](#metrics-logs-and-reproducibility)
+for why that is not the same as training reward.
+
+| # | stage | environment | env steps | episodes | train time | final greedy evaluation |
+|---|---|---|---:|---:|---:|---|
+| 1 | Q-learning (tabular) | GridWorld | 94,674 | 6,000 | 6 s | **18/18 optimal actions**, $\Vert Q - Q^*\Vert_{\max} = 0.12$ |
+| 2 | DQN, no replay, no target | CartPole-v1 | 25,378 | 2,000 | 21 s | 9.7 ± 0.9 — **diverged** |
+| 3 | DQN + replay | CartPole-v1 | 25,502 | 2,000 | 28 s | 9.2 ± 1.0 — **diverged** |
+| 4 | DQN + replay + target net | CartPole-v1 | 200,036 | 1,909 | 246 s | **500.0 ± 0.0** — solved |
+| 5 | REINFORCE | CartPole-v1 | 200,130 | 508 | 336 s | 459.4 ± 56.1 |
+| 6 | Actor-Critic (n-step) | CartPole-v1 | 200,203 | 1,029 | 193 s | **500.0 ± 0.0** — solved |
+| 7 | PPO | CartPole-v1 | 200,578 | 754 | 336 s | **500.0 ± 0.0** — solved |
+| 7 | **PPO** | **LunarLander-v3** | 599,800 | 1,959 | 820 s | **250.3 ± 46.8** — solved (threshold 200) |
+
+Three findings worth pulling out of that table, each developed in the stage it
+belongs to:
+
+**The target network is load-bearing; on this task, replay alone is not.**
+Rows 2 and 3 do not merely learn slowly — they *diverge*. The mean predicted
+Q-value is the tell:
+
+| variant | final mean predicted Q | largest possible value |
+|---|---|---:|
+| no replay, no target net | **3,142,030** | 99.3 |
+| replay, no target net | **7,453,550** | 99.3 |
+| replay + target net | **91.3** | 99.3 |
+
+With γ = 0.99 and a 500-step cap, no CartPole state is worth more than
+∑₀⁴⁹⁹ 0.99ᵗ ≈ 99.3. The two variants without a target network predict values
+four to five orders of magnitude larger. That is the deadly triad diverging, not
+a tuning problem — and replay makes it *worse*, because more useful gradient
+steps on a self-referential target close the feedback loop faster. The full 2×2
+factorial that separates the two effects is [Experiment 2](#stage-3--experience-replay).
+
+**REINFORCE's gradient estimator is essentially noise.** Forty independent
+single-episode gradient estimates *at identical parameters* have a mean pairwise
+cosine similarity of **+0.003** — orthogonal. It still learns, but it is the only
+algorithm here that fails to reach a stable 500, and the ± 56.1 in its row is
+that variance surfacing as behaviour.
+
+**CartPole cannot rank stages 4–7, and it is worth saying so.** Given the same
+200,000-step budget, all four working methods reach a greedy 500. Sampling the
+greedy policy every 5,000 steps:
+
+| stage | first greedy ≥475 | evals ≥475 | holds ≥475 to the end from | last 5 evaluations |
+|---|---:|---:|---:|---|
+| DQN + replay + target | 95,125 | 35% | 180,475 | 500 500 500 500 500 |
+| REINFORCE | 10,441 | 80% | **never** | 500 427 344 346 **426** |
+| Actor-Critic | **5,033** | 72% | 75,324 | 500 500 500 500 500 |
+| PPO | 6,323 | 69% | 176,477 | 500 486 500 500 500 |
+
+There is no clean monotone ordering here, and claiming one would be
+over-reading a single seed on a task where every method saturates. What *is*
+robust is the last column: **REINFORCE is the only method that reaches 500 and
+then loses it**, drifting back to ~400 over the final 10% of training. Its
+gradient noise never switches off, so there is no such thing as "converged".
+Everything else ends pinned at the ceiling.
+
+The progression's real payoff is not visible on CartPole at all — it is that PPO
+is the only method here that also solves **LunarLander**, an 8-dimensional
+problem with shaped rewards and a genuine failure mode (crashing), inside
+600,000 steps.
+
+![Progression on CartPole](results/plots/progression_cartpole.png)
+
+---
+
