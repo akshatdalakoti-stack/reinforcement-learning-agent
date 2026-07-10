@@ -202,3 +202,5 @@ def main(argv=None) -> MetricsRecorder:
     return recorder
 
 
+if __name__ == "__main__":
+    main()
