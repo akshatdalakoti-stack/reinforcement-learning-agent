@@ -53,3 +53,77 @@ def parse_args(argv=None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def train(args: argparse.Namespace):
+    set_seed(args.seed)
+
+    env = GridWorld(slip_prob=args.slip_prob, max_steps=args.max_steps)
+    agent = QLearningAgent(
+        n_states=env.n_states,
+        n_actions=env.n_actions,
+        alpha=args.alpha,
+        alpha_schedule=args.alpha_schedule,
+        alpha_power=args.alpha_power,
+        gamma=args.gamma,
+        epsilon_start=args.epsilon_start,
+        epsilon_end=args.epsilon_end,
+        epsilon_decay=args.epsilon_decay,
+        seed=args.seed,
+    )
+
+    recorder = MetricsRecorder(run_name=args.run_name, config=vars(args))
+    q_star, _ = value_iteration(env, gamma=args.gamma)
+    decision_states = env.decision_states()
+    reset_options = {"exploring_start": args.exploring_starts}
+    deltas: list[float] = []
+    q_star_gaps: list[float] = []
+
+    env_steps = 0
+    for episode in range(args.episodes):
+        state, _ = env.reset(seed=args.seed + episode, options=reset_options)
+        agent.start_episode()
+        ep_reward, ep_len, td_abs = 0.0, 0, []
+
+        while True:
+            action = agent.act(state)
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            # Note `terminated`, not `terminated or truncated`: a time-limit
+            # cutoff must not be learned as "the world ends here".
+            td_error = agent.update(state, action, reward, next_state, terminated)
+
+            td_abs.append(abs(td_error))
+            ep_reward += reward
+            ep_len += 1
+            env_steps += 1
+            state = next_state
+            if terminated or truncated:
+                break
+
+        agent.decay_epsilon()
+        deltas.append(max(agent.last_episode_max_delta, 1e-12))
+
+        # Distance to the exact solution over the states a policy is defined on.
+        gap = float(np.abs(agent.q_table[decision_states] - q_star[decision_states]).max())
+        q_star_gaps.append(gap)
+
+        recorder.record_episode(
+            episode=episode,
+            reward=ep_reward,
+            length=ep_len,
+            env_steps=env_steps,
+            loss=float(np.mean(np.square(td_abs))),   # mean squared TD error
+            epsilon=agent.epsilon,
+            q_star_gap=gap,
+            coverage=agent.coverage(decision_states),
+        )
+
+        if not args.quiet and (episode + 1) % max(1, args.episodes // 10) == 0:
+            print(
+                f"  ep {episode + 1:>5}/{args.episodes}  "
+                f"avg100={recorder.rewards[-100:].mean():+.3f}  "
+                f"eps={agent.epsilon:.3f}  "
+                f"|Q-Q*|max={gap:.4f}  coverage={agent.coverage(decision_states):.0%}"
+            )
+
+    return env, agent, recorder, q_star, deltas, q_star_gaps
+
+
