@@ -115,3 +115,57 @@ problem with shaped rewards and a genuine failure mode (crashing), inside
 
 ---
 
+## Quick start
+
+```bash
+pip install -r requirements.txt
+```
+
+LunarLander (stage 7) needs Box2D, which builds from source on Windows:
+
+```bash
+pip install swig && pip install box2d-py --no-build-isolation
+```
+
+If it will not build, `ppo/train.py` falls back to CartPole automatically and
+says so — nothing else in the project depends on it.
+
+Run the whole progression and regenerate every figure and table (~30 min on CPU):
+
+```bash
+python -m experiments.run_all
+```
+
+To check everything is wired up without waiting, use the short-budget version
+(~3 min). It writes to `_quick`-suffixed run names, so a smoke test can never
+overwrite real results:
+
+```bash
+python -m experiments.run_all --quick --skip-lunar
+```
+
+Add `--with-ablations` to also run all five controlled experiments.
+
+Or one stage at a time:
+
+```bash
+python -m q_learning.train --exploring-starts --alpha-schedule visit_count
+python -m dqn.train --no-replay --no-target-network --run-name dqn_online
+python -m dqn.train --no-target-network --run-name dqn_replay
+python -m dqn.train --run-name dqn_cartpole
+python -m reinforce.train --gradient-variance 40
+python -m actor_critic.train
+python -m ppo.train --env LunarLander-v3 --total-steps 600000
+```
+
+Evaluate any saved checkpoint with exploration switched off:
+
+```bash
+python -m evaluation.evaluate --checkpoint checkpoints/ppo_lunarlander.pt --env LunarLander-v3
+```
+
+Everything runs on CPU. `--device cuda` is used automatically when available;
+these networks are small enough that CPU is often faster.
+
+---
+
