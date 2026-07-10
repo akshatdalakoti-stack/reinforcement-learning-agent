@@ -127,3 +127,78 @@ def train(args: argparse.Namespace):
     return env, agent, recorder, q_star, deltas, q_star_gaps
 
 
+def main(argv=None) -> MetricsRecorder:
+    args = parse_args(argv)
+    print(f"[q-learning] GridWorld  slip={args.slip_prob}  seed={args.seed}")
+    env, agent, recorder, q_star, deltas, gaps = train(args)
+
+    ckpt = agent.save(resolve_path("checkpoints", f"{args.run_name}.npz"))
+
+    decision_states = env.decision_states()
+    greedy = agent.greedy_policy()
+    # Compare against the *set* of optimal actions: with a stochastic grid two
+    # actions can be tied at the optimum, and calling one of them wrong would
+    # understate the policy quality.
+    greedy_matches = sum(
+        1 for s in decision_states
+        if q_star[s, greedy[s]] >= q_star[s].max() - 1e-9
+    )
+    n_decision_states = len(decision_states)
+
+    summary = recorder.summary(args.window)
+    print("\n--- results -------------------------------------------------")
+    print(f"  episodes                 {summary['episodes']}")
+    print(f"  environment steps        {summary['env_steps']}")
+    print(f"  training time            {summary['training_time_sec']} s")
+    print(f"  final performance        {summary['final_performance_train']:+.3f} "
+          f"(mean reward, last {args.window} episodes)")
+    print(f"  final |Q - Q*|_max       {gaps[-1]:.4f}")
+    print(f"  greedy policy matches Q* {greedy_matches}/{n_decision_states} states")
+    print(f"  state-action coverage    {agent.coverage(decision_states):.0%}")
+    print(f"  checkpoint               {ckpt}")
+
+    recorder.config["final_eval"] = {
+        "final_q_star_gap": gaps[-1],
+        "optimal_actions": greedy_matches,
+        "decision_states": n_decision_states,
+        "coverage": agent.coverage(decision_states),
+    }
+    recorder.save(resolve_dir(*LOG_DIR))
+
+    if not args.no_plots:
+        plot_learning_curve(
+            recorder,
+            resolve_path(*PLOT_DIR, f"{args.run_name}_curve.png"),
+            window=args.window,
+            title="Q-learning on GridWorld",
+        )
+        plot_q_convergence(
+            deltas,
+            resolve_path(*PLOT_DIR, f"{args.run_name}_convergence.png"),
+            title="Q-learning convergence: largest table update per episode",
+        )
+        plot_gridworld_policy(
+            env,
+            agent.q_table,
+            resolve_path(*PLOT_DIR, f"{args.run_name}_policy.png"),
+            title="Learned greedy policy (arrows) and V(s) (shading)",
+        )
+        plot_gridworld_policy(
+            env,
+            q_star,
+            resolve_path(*PLOT_DIR, f"{args.run_name}_policy_optimal.png"),
+            title="Optimal policy from value iteration (ground truth)",
+        )
+
+    print("\n  greedy rollout from the learned table:")
+    state, _ = env.reset(seed=args.seed)
+    for _ in range(args.max_steps):
+        print("    " + env.render().replace("\n", "\n    "))
+        state, _, terminated, truncated, _ = env.step(agent.greedy_action(state))
+        if terminated or truncated:
+            print("    " + env.render().replace("\n", "\n    "))
+            break
+
+    return recorder
+
+
