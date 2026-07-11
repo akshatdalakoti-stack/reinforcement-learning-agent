@@ -52,3 +52,38 @@ class MetricsRecorder:
     _start_time: float = field(default_factory=time.perf_counter, repr=False)
     total_env_steps: int = 0
 
+    # ------------------------------------------------------------------ record
+    def record_episode(
+        self,
+        episode: int,
+        reward: float,
+        length: int,
+        env_steps: int,
+        loss: float | None = None,
+        entropy: float | None = None,
+        **extra: float,
+    ) -> None:
+        self.total_env_steps = env_steps
+        row: dict[str, float] = {
+            "episode": float(episode),
+            "reward": float(reward),
+            "length": float(length),
+            "env_steps": float(env_steps),
+            "elapsed_sec": self.elapsed,
+        }
+        if loss is not None and np.isfinite(loss):
+            row["loss"] = float(loss)
+        if entropy is not None and np.isfinite(entropy):
+            row["entropy"] = float(entropy)
+        row.update({k: float(v) for k, v in extra.items()})
+        self.episodes.append(row)
+
+    # ------------------------------------------------------------------ access
+    @property
+    def elapsed(self) -> float:
+        return time.perf_counter() - self._start_time
+
+    def series(self, key: str) -> np.ndarray:
+        """Column ``key`` across episodes; NaN where an episode lacks it."""
+        return np.array([ep.get(key, np.nan) for ep in self.episodes], dtype=np.float64)
+
