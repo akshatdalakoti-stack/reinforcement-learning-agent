@@ -101,3 +101,54 @@ class MetricsRecorder:
             return float("nan")
         return float(np.mean(rewards[-window:]))
 
+    def summary(self, window: int = 50) -> dict[str, Any]:
+        rewards = self.rewards
+        lengths = self.series("length")
+        return {
+            "run_name": self.run_name,
+            "config": self.config,
+            "episodes": len(self.episodes),
+            "env_steps": int(self.total_env_steps),
+            "training_time_sec": round(self.elapsed, 2),
+            "best_episode_reward": float(np.max(rewards)) if rewards.size else float("nan"),
+            "final_performance_train": round(self.final_performance(window), 3),
+            "mean_episode_length_final": (
+                float(np.mean(lengths[-window:])) if lengths.size else float("nan")
+            ),
+            "steps_per_second": (
+                round(self.total_env_steps / max(self.elapsed, 1e-9), 1)
+            ),
+        }
+
+    # -------------------------------------------------------------------- save
+    def save(self, directory: str) -> tuple[str, str]:
+        """Write ``<run_name>.csv`` (per-episode) and ``<run_name>.json`` (summary)."""
+        os.makedirs(directory, exist_ok=True)
+        csv_path = os.path.join(directory, f"{self.run_name}.csv")
+        json_path = os.path.join(directory, f"{self.run_name}.json")
+
+        keys: list[str] = []
+        for ep in self.episodes:
+            for k in ep:
+                if k not in keys:
+                    keys.append(k)
+        with open(csv_path, "w", encoding="utf-8", newline="") as fh:
+            fh.write(",".join(keys) + "\n")
+            for ep in self.episodes:
+                fh.write(",".join("" if k not in ep else f"{ep[k]:.6g}" for k in keys) + "\n")
+        with open(json_path, "w", encoding="utf-8") as fh:
+            json.dump(self.summary(), fh, indent=2)
+        return csv_path, json_path
+
+    @staticmethod
+    def load_csv(path: str) -> dict[str, np.ndarray]:
+        """Read a recorder CSV back into column arrays (used by plotting scripts)."""
+        with open(path, "r", encoding="utf-8") as fh:
+            header = fh.readline().strip().split(",")
+            cols: dict[str, list[float]] = {k: [] for k in header}
+            for line in fh:
+                if not line.strip():
+                    continue
+                for k, v in zip(header, line.rstrip("\n").split(",")):
+                    cols[k].append(float(v) if v else np.nan)
+        return {k: np.asarray(v, dtype=np.float64) for k, v in cols.items()}
