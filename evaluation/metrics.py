@@ -87,3 +87,17 @@ class MetricsRecorder:
         """Column ``key`` across episodes; NaN where an episode lacks it."""
         return np.array([ep.get(key, np.nan) for ep in self.episodes], dtype=np.float64)
 
+    @property
+    def rewards(self) -> np.ndarray:
+        return self.series("reward")
+
+    def smoothed_rewards(self, window: int = 50) -> np.ndarray:
+        return moving_average(self.rewards, window)
+
+    def final_performance(self, window: int = 50) -> float:
+        """Mean reward over the last ``window`` training episodes."""
+        rewards = self.rewards
+        if rewards.size == 0:
+            return float("nan")
+        return float(np.mean(rewards[-window:]))
+
