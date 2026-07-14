@@ -48,3 +48,20 @@ class QNetwork(nn.Module):
         self.net = nn.Sequential(*layers)
         self.apply(self._init_weights)
 
+    @staticmethod
+    def _init_weights(module: nn.Module) -> None:
+        # Orthogonal init with a small output gain: the last layer starts near
+        # zero, so early Q-values are small and the initial greedy policy is
+        # effectively arbitrary rather than confidently wrong.
+        if isinstance(module, nn.Linear):
+            nn.init.orthogonal_(module.weight, gain=1.0)
+            nn.init.constant_(module.bias, 0.0)
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        """``(batch, obs_dim)`` -> ``(batch, n_actions)``."""
+        return self.net(obs)
+
+    @torch.no_grad()
+    def greedy_action(self, obs: torch.Tensor) -> int:
+        """argmax_a Q(s,a) for a single un-batched observation."""
+        return int(self.forward(obs.unsqueeze(0)).argmax(dim=1).item())
