@@ -169,3 +169,5 @@ these networks are small enough that CPU is often faster.
 
 ---
 
+## Part I — The mathematical foundation
+
