@@ -102,3 +102,39 @@ class ReplayBuffer:
     def is_full(self) -> bool:
         return self._size == self.capacity
 
+    def push(
+        self,
+        state: np.ndarray,
+        action: int,
+        reward: float,
+        next_state: np.ndarray,
+        done: bool,
+    ) -> None:
+        """Store one transition, overwriting the oldest once full.
+
+        ``done`` must mean "the MDP terminated", not "the episode stopped".
+        A transition truncated by a time limit still has a future worth
+        bootstrapping through; storing it as ``done=True`` teaches the agent
+        that the world ends at step 500, which caps every value estimate.
+        """
+        i = self._pos
+        self.states[i] = state
+        self.actions[i] = action
+        self.rewards[i] = reward
+        self.next_states[i] = next_state
+        self.dones[i] = float(done)
+
+        self._pos = (self._pos + 1) % self.capacity
+        self._size = min(self._size + 1, self.capacity)
+
+    def sample(self, batch_size: int) -> Batch:
+        """Uniformly sample ``batch_size`` transitions *with* replacement.
+
+        Sampling with replacement keeps this O(batch) regardless of buffer size
+        and, at realistic buffer sizes, duplicates are rare enough not to matter.
+        """
+        if self._size == 0:
+            raise ValueError("cannot sample from an empty replay buffer")
+        idx = self.rng.integers(0, self._size, size=batch_size)
+        return self._to_batch(idx)
+
