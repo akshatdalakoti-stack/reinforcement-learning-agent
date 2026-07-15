@@ -62,3 +62,36 @@ class Batch(NamedTuple):
     dones: torch.Tensor         # (B, 1)       float32, 1.0 where terminated
 
 
+class ReplayBuffer:
+    """Fixed-capacity circular buffer with uniform random sampling.
+
+    Parameters
+    ----------
+    capacity:
+        How many transitions to keep.  This is a real hyperparameter, not a
+        memory detail: too small and the buffer is still highly correlated and
+        forgets the past; too large and the agent keeps training on transitions
+        from a policy so old they are no longer informative.
+    """
+
+    def __init__(
+        self,
+        capacity: int,
+        obs_dim: int,
+        seed: int | None = None,
+        device: torch.device | str = "cpu",
+    ) -> None:
+        self.capacity = int(capacity)
+        self.obs_dim = int(obs_dim)
+        self.device = torch.device(device)
+
+        self.states = np.zeros((self.capacity, self.obs_dim), dtype=np.float32)
+        self.actions = np.zeros(self.capacity, dtype=np.int64)
+        self.rewards = np.zeros(self.capacity, dtype=np.float32)
+        self.next_states = np.zeros((self.capacity, self.obs_dim), dtype=np.float32)
+        self.dones = np.zeros(self.capacity, dtype=np.float32)
+
+        self._pos = 0        # where the next write goes
+        self._size = 0       # how many slots are valid
+        self.rng = np.random.default_rng(seed)
+
