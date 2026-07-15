@@ -138,3 +138,46 @@ class ReplayBuffer:
         idx = self.rng.integers(0, self._size, size=batch_size)
         return self._to_batch(idx)
 
+    def latest(self, n: int = 1) -> Batch:
+        """The ``n`` most recently stored transitions.
+
+        Used by the *no-replay* ablation: it makes "online DQN" a batch of the
+        last transition only, so the two variants differ purely in which
+        transitions the gradient is computed on.
+        """
+        n = min(n, self._size)
+        idx = (self._pos - 1 - np.arange(n)) % self.capacity
+        return self._to_batch(idx)
+
+    def _to_batch(self, idx: np.ndarray) -> Batch:
+        t = lambda arr, dtype: torch.as_tensor(arr, dtype=dtype, device=self.device)  # noqa: E731
+        return Batch(
+            states=t(self.states[idx], torch.float32),
+            actions=t(self.actions[idx], torch.int64).unsqueeze(1),
+            rewards=t(self.rewards[idx], torch.float32).unsqueeze(1),
+            next_states=t(self.next_states[idx], torch.float32),
+            dones=t(self.dones[idx], torch.float32).unsqueeze(1),
+        )
+
+    def correlation_diagnostic(self, batch_size: int = 64) -> float:
+        """Mean pairwise state distance in a random batch vs. a consecutive one.
+
+        A number well above 1.0 means random sampling really is drawing more
+        diverse states than the online stream does -- this is the quantitative
+        version of "replay decorrelates the data", and
+        ``experiments/exp2_replay_ablation.py`` reports it.
+        """
+        if self._size < batch_size * 2:
+            return float("nan")
+        random_idx = self.rng.integers(0, self._size, size=batch_size)
+        start = int(self.rng.integers(0, self._size - batch_size))
+        consecutive_idx = np.arange(start, start + batch_size)
+
+        def spread(idx: np.ndarray) -> float:
+            s = self.states[idx]
+            return float(np.mean(np.std(s, axis=0)))
+
+        consecutive_spread = spread(consecutive_idx)
+        if consecutive_spread <= 1e-12:
+            return float("inf")
+        return spread(random_idx) / consecutive_spread
