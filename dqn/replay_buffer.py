@@ -95,3 +95,10 @@ class ReplayBuffer:
         self._size = 0       # how many slots are valid
         self.rng = np.random.default_rng(seed)
 
+    def __len__(self) -> int:
+        return self._size
+
+    @property
+    def is_full(self) -> bool:
+        return self._size == self.capacity
+
