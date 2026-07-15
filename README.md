@@ -171,3 +171,36 @@ these networks are small enough that CPU is often faster.
 
 ## Part I — The mathematical foundation
 
+### Markov Decision Processes
+
+Every algorithm here assumes the environment is a **Markov Decision Process**,
+the tuple
+
+$$(\mathcal{S},\ \mathcal{A},\ P,\ R,\ \gamma)$$
+
+| symbol | name | meaning |
+|---|---|---|
+| $s \in \mathcal{S}$ | **state** | everything the agent observes about the world |
+| $a \in \mathcal{A}$ | **action** | what the agent may do |
+| $P(s' \mid s,a)$ | **transition** | probability of landing in $s'$ after $a$ in $s$ |
+| $R(s,a)$ | **reward** | the scalar the agent is trying to maximise |
+| $\gamma \in [0,1)$ | **discount** | how much future reward is worth now |
+
+The load-bearing assumption is the **Markov property**:
+
+$$P(s_{t+1} \mid s_t, a_t) = P(s_{t+1} \mid s_t, a_t, s_{t-1}, a_{t-1}, \dots, s_0)$$
+
+The current state is a sufficient statistic for the future. This is what makes
+value functions well-defined — if the past mattered beyond $s_t$, then "the
+value of state $s$" would not be a function of $s$ at all.
+
+`environments/gridworld.py` implements every element of this tuple explicitly:
+`_transition_distribution` **is** $P$, and `transition_model()` returns the full
+$P$ and $R$ tensors. That is worth having, because it lets us solve the MDP
+exactly by value iteration and check what the learning agents converge to.
+
+Note what changes at stage 2: on CartPole, $\mathcal{S} = \mathbb{R}^4$ is
+continuous, so $P$ and $R$ can no longer be written down as tables — and the
+agent never sees them anyway. Every method here is **model-free**: it learns
+from sampled transitions $(s, a, r, s')$, never from $P$.
+
