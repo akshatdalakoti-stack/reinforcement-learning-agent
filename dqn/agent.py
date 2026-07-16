@@ -142,3 +142,19 @@ class DQNAgent:
         self._recent_losses: list[float] = []
         self._recent_q: list[float] = []
 
+    # ------------------------------------------------------------------ acting
+    @torch.no_grad()
+    def act(self, state: np.ndarray, greedy: bool = False) -> int:
+        """Epsilon-greedy over the online network's Q-values."""
+        if (not greedy) and self.rng.random() < self.epsilon:
+            return int(self.rng.integers(self.n_actions))
+        obs = torch.as_tensor(state, dtype=torch.float32, device=self.device)
+        q_values = self.online_net(obs.unsqueeze(0))
+        return int(q_values.argmax(dim=1).item())
+
+    def update_epsilon(self) -> float:
+        """Linear anneal from ``epsilon_start`` to ``epsilon_end``."""
+        frac = min(1.0, self.env_steps / max(1, self.epsilon_decay_steps))
+        self.epsilon = self.epsilon_start + frac * (self.epsilon_end - self.epsilon_start)
+        return self.epsilon
+
