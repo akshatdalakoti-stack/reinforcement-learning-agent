@@ -75,3 +75,70 @@ class DQNAgent:
         episode-based schedule would decay at an unpredictable rate.
     """
 
+    def __init__(
+        self,
+        obs_dim: int,
+        n_actions: int,
+        hidden_sizes: Sequence[int] = (128, 128),
+        lr: float = 1e-3,
+        gamma: float = 0.99,
+        batch_size: int = 64,
+        buffer_size: int = 50_000,
+        learning_starts: int = 1_000,
+        train_freq: int = 1,
+        target_update_freq: int = 500,
+        tau: float = 0.0,
+        epsilon_start: float = 1.0,
+        epsilon_end: float = 0.05,
+        epsilon_decay_steps: int = 10_000,
+        grad_clip: float = 10.0,
+        use_replay: bool = True,
+        use_target_network: bool = True,
+        double_dqn: bool = False,
+        device: torch.device | str = "cpu",
+        seed: int | None = None,
+    ) -> None:
+        self.device = torch.device(device)
+        self.obs_dim, self.n_actions = int(obs_dim), int(n_actions)
+        self.gamma = float(gamma)
+        self.batch_size = int(batch_size)
+        self.learning_starts = int(learning_starts)
+        self.train_freq = int(train_freq)
+        self.target_update_freq = int(target_update_freq)
+        self.tau = float(tau)
+        self.grad_clip = float(grad_clip)
+        self.use_replay = bool(use_replay)
+        self.use_target_network = bool(use_target_network)
+        self.double_dqn = bool(double_dqn)
+
+        self.epsilon_start = float(epsilon_start)
+        self.epsilon_end = float(epsilon_end)
+        self.epsilon_decay_steps = int(epsilon_decay_steps)
+        self.epsilon = float(epsilon_start)
+
+        self.online_net = QNetwork(obs_dim, n_actions, hidden_sizes).to(self.device)
+        # The target network is always constructed, even when unused, so that
+        # checkpoints have a stable shape and `_td_target` stays branch-free.
+        self.target_net = copy.deepcopy(self.online_net).to(self.device)
+        self.target_net.eval()
+        for p in self.target_net.parameters():
+            p.requires_grad_(False)
+
+        self.optimizer = torch.optim.Adam(self.online_net.parameters(), lr=float(lr))
+
+        # Even the no-replay variant writes to a buffer; it just reads back only
+        # the newest entry. One code path, one difference.
+        self.buffer = ReplayBuffer(
+            capacity=buffer_size if self.use_replay else max(2, batch_size),
+            obs_dim=obs_dim,
+            seed=seed,
+            device=self.device,
+        )
+
+        self.rng = np.random.default_rng(seed)
+        self.env_steps = 0
+        self.gradient_steps = 0
+        self.target_syncs = 0
+        self._recent_losses: list[float] = []
+        self._recent_q: list[float] = []
+
