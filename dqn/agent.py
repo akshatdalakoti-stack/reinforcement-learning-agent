@@ -211,3 +211,24 @@ class DQNAgent:
         self._recent_q.append(float(q_pred.mean().item()))
         return loss_value
 
+    def _bootstrap_values(self, next_states: torch.Tensor) -> torch.Tensor:
+        """max_a' Q(s', a'), from whichever network is acting as the target."""
+        net = self.target_net if self.use_target_network else self.online_net
+        if self.double_dqn:
+            best = self.online_net(next_states).argmax(dim=1, keepdim=True)
+            return net(next_states).gather(1, best)
+        return net(next_states).max(dim=1, keepdim=True).values
+
+    def _sync_target(self) -> None:
+        if not self.use_target_network:
+            return
+        if self.tau > 0.0:
+            with torch.no_grad():
+                for tgt, src in zip(self.target_net.parameters(),
+                                    self.online_net.parameters()):
+                    tgt.mul_(1.0 - self.tau).add_(self.tau * src)
+            return
+        if self.gradient_steps % self.target_update_freq == 0:
+            self.target_net.load_state_dict(self.online_net.state_dict())
+            self.target_syncs += 1
+
