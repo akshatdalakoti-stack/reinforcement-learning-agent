@@ -158,3 +158,17 @@ class DQNAgent:
         self.epsilon = self.epsilon_start + frac * (self.epsilon_end - self.epsilon_start)
         return self.epsilon
 
+    # ---------------------------------------------------------------- learning
+    def observe(
+        self,
+        state: np.ndarray,
+        action: int,
+        reward: float,
+        next_state: np.ndarray,
+        terminated: bool,
+    ) -> None:
+        """Record one transition and advance the step/exploration counters."""
+        self.buffer.push(state, action, reward, next_state, terminated)
+        self.env_steps += 1
+        self.update_epsilon()
+
