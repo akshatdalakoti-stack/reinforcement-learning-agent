@@ -204,3 +204,15 @@ continuous, so $P$ and $R$ can no longer be written down as tables — and the
 agent never sees them anyway. Every method here is **model-free**: it learns
 from sampled transitions $(s, a, r, s')$, never from $P$.
 
+### Returns and the discount factor
+
+The agent maximises the **discounted return**:
+
+$$G_t = r_t + \gamma r_{t+1} + \gamma^2 r_{t+2} + \cdots = \sum_{k=0}^{\infty} \gamma^k r_{t+k}$$
+
+$\gamma$ does two jobs. Mathematically it keeps $G_t$ finite on
+non-terminating tasks. Practically it sets the **effective horizon** at roughly
+$1/(1-\gamma)$ steps — $\gamma = 0.99$ means the agent plans about 100 steps
+ahead. It is a modelling choice, not a constant of nature, which is why it
+belongs to the agent in this codebase, not to the environment.
+
