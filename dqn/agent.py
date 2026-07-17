@@ -172,3 +172,42 @@ class DQNAgent:
         self.env_steps += 1
         self.update_epsilon()
 
+    def train_step(self) -> float | None:
+        """One gradient step; ``None`` when it is too early to learn."""
+        if self.env_steps < self.learning_starts:
+            return None
+        if self.env_steps % self.train_freq != 0:
+            return None
+        if self.use_replay and len(self.buffer) < self.batch_size:
+            return None
+
+        batch = (
+            self.buffer.sample(self.batch_size)
+            if self.use_replay
+            else self.buffer.latest(1)   # stage 2: the transition just observed
+        )
+
+        # Q(s, a) for the actions actually taken.
+        q_pred = self.online_net(batch.states).gather(1, batch.actions)
+
+        with torch.no_grad():
+            target_q = self._bootstrap_values(batch.next_states)
+            # (1 - done) zeroes the future for genuinely terminal transitions.
+            y = batch.rewards + self.gamma * (1.0 - batch.dones) * target_q
+
+        loss = F.smooth_l1_loss(q_pred, y)
+
+        self.optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        if self.grad_clip > 0:
+            nn.utils.clip_grad_norm_(self.online_net.parameters(), self.grad_clip)
+        self.optimizer.step()
+
+        self.gradient_steps += 1
+        self._sync_target()
+
+        loss_value = float(loss.item())
+        self._recent_losses.append(loss_value)
+        self._recent_q.append(float(q_pred.mean().item()))
+        return loss_value
+
