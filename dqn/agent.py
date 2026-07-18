@@ -232,3 +232,20 @@ class DQNAgent:
             self.target_net.load_state_dict(self.online_net.state_dict())
             self.target_syncs += 1
 
+    # ------------------------------------------------------------ diagnostics
+    def pop_stats(self) -> dict[str, float]:
+        """Mean loss and mean predicted Q since the last call, then reset.
+
+        Mean Q is worth watching on its own: runaway growth in the predicted
+        value -- far above the largest return the environment can pay -- is the
+        signature of the deadly triad diverging, and it shows up in this number
+        long before the reward curve collapses.
+        """
+        stats = {
+            "loss": float(np.mean(self._recent_losses)) if self._recent_losses else float("nan"),
+            "mean_q": float(np.mean(self._recent_q)) if self._recent_q else float("nan"),
+        }
+        self._recent_losses.clear()
+        self._recent_q.clear()
+        return stats
+
