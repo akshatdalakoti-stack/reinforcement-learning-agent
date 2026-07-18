@@ -249,3 +249,20 @@ class DQNAgent:
         self._recent_q.clear()
         return stats
 
+    # -------------------------------------------------------------- checkpoint
+    def config(self) -> dict:
+        return {
+            "obs_dim": self.obs_dim,
+            "n_actions": self.n_actions,
+            "gamma": self.gamma,
+            "batch_size": self.batch_size,
+            "use_replay": self.use_replay,
+            "use_target_network": self.use_target_network,
+            "double_dqn": self.double_dqn,
+            "target_update_freq": self.target_update_freq,
+            "tau": self.tau,
+            "hidden_sizes": [
+                m.out_features for m in self.online_net.net if isinstance(m, nn.Linear)
+            ][:-1],
+        }
+
