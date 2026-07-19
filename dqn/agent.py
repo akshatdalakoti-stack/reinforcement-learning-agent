@@ -266,3 +266,39 @@ class DQNAgent:
             ][:-1],
         }
 
+    def save(self, path: str) -> str:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        torch.save(
+            {
+                "online_net": self.online_net.state_dict(),
+                "target_net": self.target_net.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "env_steps": self.env_steps,
+                "gradient_steps": self.gradient_steps,
+                "config": json.dumps(self.config()),
+            },
+            path,
+        )
+        return path
+
+    @classmethod
+    def load(cls, path: str, device: torch.device | str = "cpu", **overrides) -> "DQNAgent":
+        ckpt = torch.load(path, map_location=device, weights_only=False)
+        cfg = json.loads(ckpt["config"])
+        agent = cls(
+            obs_dim=cfg["obs_dim"],
+            n_actions=cfg["n_actions"],
+            hidden_sizes=cfg["hidden_sizes"],
+            gamma=cfg["gamma"],
+            use_replay=cfg["use_replay"],
+            use_target_network=cfg["use_target_network"],
+            double_dqn=cfg.get("double_dqn", False),
+            device=device,
+            **overrides,
+        )
+        agent.online_net.load_state_dict(ckpt["online_net"])
+        agent.target_net.load_state_dict(ckpt["target_net"])
+        agent.env_steps = ckpt.get("env_steps", 0)
+        agent.gradient_steps = ckpt.get("gradient_steps", 0)
+        agent.epsilon = 0.0   # loaded agents are for evaluation
+        return agent
