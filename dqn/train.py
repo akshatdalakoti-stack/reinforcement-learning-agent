@@ -72,3 +72,28 @@ def parse_args(argv=None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def build_agent(args: argparse.Namespace, spec, device) -> DQNAgent:
+    return DQNAgent(
+        obs_dim=spec.obs_dim,
+        n_actions=spec.n_actions,
+        hidden_sizes=args.hidden,
+        lr=args.lr,
+        gamma=args.gamma,
+        batch_size=args.batch_size,
+        buffer_size=args.buffer_size,
+        learning_starts=args.learning_starts,
+        train_freq=args.train_freq,
+        target_update_freq=args.target_update_freq,
+        tau=args.tau,
+        epsilon_start=args.epsilon_start,
+        epsilon_end=args.epsilon_end,
+        epsilon_decay_steps=args.epsilon_decay_steps,
+        grad_clip=args.grad_clip,
+        use_replay=not args.no_replay,
+        use_target_network=not args.no_target_network,
+        double_dqn=args.double_dqn,
+        device=device,
+        seed=args.seed,
+    )
+
+
