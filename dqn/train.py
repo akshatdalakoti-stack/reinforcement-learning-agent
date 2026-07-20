@@ -97,3 +97,76 @@ def build_agent(args: argparse.Namespace, spec, device) -> DQNAgent:
     )
 
 
+def train(args: argparse.Namespace) -> tuple[DQNAgent, MetricsRecorder, object, object]:
+    set_seed(args.seed)
+    device = get_device(args.device)
+
+    env = make_env(args.env, seed=args.seed)
+    spec = env_spec(env)
+    agent = build_agent(args, spec, device)
+    recorder = MetricsRecorder(run_name=args.run_name, config=vars(args))
+    evaluator = PeriodicEvaluator(
+        make_env(args.env, seed=args.seed + 424_242),
+        every=args.eval_every,
+        episodes=args.eval_rollouts,
+    )
+
+    variant = (
+        f"replay={'on' if agent.use_replay else 'OFF'} "
+        f"target_net={'on' if agent.use_target_network else 'OFF'}"
+    )
+    if not args.quiet:
+        print(f"[dqn] {args.env}  {variant}  device={device}  seed={args.seed}")
+
+    for episode in range(args.episodes):
+        state, _ = env.reset(seed=args.seed * 1000 + episode)
+        ep_reward, ep_len = 0.0, 0
+
+        while True:
+            action = agent.act(state)
+            next_state, reward, terminated, truncated, _ = env.step(action)
+
+            # `terminated` only: CartPole's 500-step cutoff is a truncation, and
+            # storing it as done=True would teach the agent that balancing
+            # successfully for 500 steps is worth as little as falling over.
+            agent.observe(state, action, float(reward), next_state, terminated)
+            agent.train_step()
+
+            state = next_state
+            ep_reward += float(reward)
+            ep_len += 1
+            if terminated or truncated:
+                break
+
+        stats = agent.pop_stats()
+        eval_reward = evaluator.maybe_evaluate(agent, agent.env_steps)
+        extra = {} if eval_reward is None else {"eval_reward": eval_reward}
+        recorder.record_episode(
+            episode=episode,
+            reward=ep_reward,
+            length=ep_len,
+            env_steps=agent.env_steps,
+            loss=stats["loss"],
+            epsilon=agent.epsilon,
+            mean_q=stats["mean_q"],
+            gradient_steps=agent.gradient_steps,
+            **extra,
+        )
+
+        if not args.quiet and (episode + 1) % max(1, args.episodes // 12) == 0:
+            avg = recorder.rewards[-args.window:].mean()
+            print(
+                f"  ep {episode + 1:>4}/{args.episodes}  steps={agent.env_steps:>7}  "
+                f"avg{args.window}={avg:7.1f}  eps={agent.epsilon:.3f}  "
+                f"loss={stats['loss']:.4f}  meanQ={stats['mean_q']:7.2f}  "
+                f"greedy={evaluator.final:7.1f}"
+            )
+
+        if agent.env_steps >= args.max_env_steps:
+            if not args.quiet:
+                print(f"  reached the {args.max_env_steps} env-step budget; stopping")
+            break
+
+    return agent, recorder, env, evaluator
+
+
