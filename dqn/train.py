@@ -170,3 +170,62 @@ def train(args: argparse.Namespace) -> tuple[DQNAgent, MetricsRecorder, object, 
     return agent, recorder, env, evaluator
 
 
+def main(argv=None) -> tuple[DQNAgent, MetricsRecorder, dict, object]:
+    args = parse_args(argv)
+    agent, recorder, env, evaluator = train(args)
+
+    eval_env = make_env(args.env, seed=args.seed + 99_999)
+    result = evaluate_agent(agent, eval_env, episodes=args.eval_episodes, seed=100_000)
+    threshold = eval_env.spec.reward_threshold if eval_env.spec else None
+
+    summary = recorder.summary(args.window)
+    print("\n--- results -------------------------------------------------")
+    print(f"  variant                  replay={agent.use_replay} "
+          f"target_net={agent.use_target_network} double={agent.double_dqn}")
+    print(f"  episodes                 {summary['episodes']}")
+    print(f"  environment steps        {summary['env_steps']}")
+    print(f"  gradient steps           {agent.gradient_steps}")
+    print(f"  target syncs             {agent.target_syncs}")
+    print(f"  training time            {summary['training_time_sec']} s "
+          f"({summary['steps_per_second']} env-steps/s)")
+    print(f"  best episode reward      {summary['best_episode_reward']:.1f}")
+    print(f"  final performance (train){summary['final_performance_train']:8.1f} "
+          f"(last {args.window} episodes, still exploring)")
+    if evaluator.history:
+        best_at = next(s for s, r in evaluator.history if r == evaluator.best)
+        print(f"  best greedy in training  {evaluator.best:8.1f} "
+              f"(at {best_at:,} env steps)")
+        print(f"  last greedy in training  {evaluator.final:8.1f}")
+    print("  greedy evaluation (final):")
+    print(format_report(args.run_name, result, threshold))
+
+    if not args.no_save:
+        path = agent.save(resolve_path("checkpoints", f"{args.run_name}.pt"))
+        print(f"  checkpoint               {path}")
+    # Persist the greedy evaluation alongside the per-episode log, so that
+    # evaluation/report.py can rebuild the summary table without retraining.
+    recorder.config["final_eval"] = {
+        "mean_reward": result["mean_reward"],
+        "std_reward": result["std_reward"],
+        "episodes": result["episodes"],
+        "threshold": threshold,
+        "solved": (threshold is not None and result["mean_reward"] >= threshold),
+    }
+    recorder.save(resolve_dir(*LOG_DIR))
+
+    if not args.no_plots:
+        plot_learning_curve(
+            recorder,
+            resolve_path(*PLOT_DIR, f"{args.run_name}_curve.png"),
+            window=args.window,
+            title=f"DQN on {args.env} "
+                  f"(replay={'on' if agent.use_replay else 'off'}, "
+                  f"target net={'on' if agent.use_target_network else 'off'})",
+        )
+
+    env.close()
+    eval_env.close()
+    evaluator.env.close()
+    return agent, recorder, result, evaluator
+
+
