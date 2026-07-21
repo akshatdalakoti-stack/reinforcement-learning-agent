@@ -216,3 +216,33 @@ $1/(1-\gamma)$ steps — $\gamma = 0.99$ means the agent plans about 100 steps
 ahead. It is a modelling choice, not a constant of nature, which is why it
 belongs to the agent in this codebase, not to the environment.
 
+### Policies, value functions, Q-functions
+
+A **policy** $\pi(a \mid s)$ maps states to a distribution over actions. This is
+the object we are ultimately searching for. Value-based methods (stages 1–4)
+represent it implicitly as $\arg\max_a Q(s,a)$; policy-gradient methods (stages
+5–7) represent it directly as a network. That distinction organises the whole
+second half of this document.
+
+The **state-value function** is the expected return from $s$ under $\pi$:
+
+$$V^\pi(s) = \mathbb{E}_\pi\!\left[G_t \mid s_t = s\right]$$
+
+The **action-value function** (Q-function) additionally fixes the first action:
+
+$$Q^\pi(s,a) = \mathbb{E}_\pi\!\left[G_t \mid s_t = s,\ a_t = a\right]$$
+
+Why prefer $Q$ over $V$? Because $Q$ is directly actionable. Given $Q$, the
+greedy policy is $\arg\max_a Q(s,a)$ — no model needed. Given only $V$, choosing
+an action requires knowing $P$ to look one step ahead. **That single fact is why
+value-based model-free control learns $Q$ and not $V$** — and, symmetrically,
+why the critic in stage 6 can get away with learning $V$: it is not choosing
+anything.
+
+The two connect through the **advantage**:
+
+$$A^\pi(s,a) = Q^\pi(s,a) - V^\pi(s)$$
+
+"How much better was this action than this state's average?" This is the
+quantity stages 6 and 7 are built around.
+
