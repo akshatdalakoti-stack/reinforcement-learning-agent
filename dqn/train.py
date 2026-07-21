@@ -229,3 +229,5 @@ def main(argv=None) -> tuple[DQNAgent, MetricsRecorder, dict, object]:
     return agent, recorder, result, evaluator
 
 
+if __name__ == "__main__":
+    main()
