@@ -65,3 +65,22 @@ class PolicyNetwork(nn.Module):
         nn.init.orthogonal_(self.head.weight, gain=0.01)
         nn.init.constant_(self.head.bias, 0.0)
 
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        return self.head(self.body(obs))
+
+    def distribution(self, obs: torch.Tensor) -> Categorical:
+        """The action distribution pi(.|s)."""
+        return Categorical(logits=self.forward(obs))
+
+    def act(self, obs: torch.Tensor, greedy: bool = False) -> tuple[int, torch.Tensor, torch.Tensor]:
+        """Sample an action, returning ``(action, log_prob, entropy)``.
+
+        ``greedy=True`` takes the mode instead -- used only at evaluation time,
+        where we want the policy's best guess rather than a sample from it.
+        """
+        dist = self.distribution(obs)
+        if greedy:
+            action = dist.probs.argmax(dim=-1)
+        else:
+            action = dist.sample()
+        return int(action.item()), dist.log_prob(action), dist.entropy()
