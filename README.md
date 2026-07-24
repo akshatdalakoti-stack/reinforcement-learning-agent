@@ -246,3 +246,28 @@ $$A^\pi(s,a) = Q^\pi(s,a) - V^\pi(s)$$
 "How much better was this action than this state's average?" This is the
 quantity stages 6 and 7 are built around.
 
+### The Bellman equations
+
+Values are recursive. The return from $s$ is one reward plus the discounted
+return from wherever you land:
+
+$$V^\pi(s) = \sum_a \pi(a|s) \sum_{s'} P(s'|s,a)\left[R(s,a) + \gamma V^\pi(s')\right]$$
+
+For the *optimal* policy, the expectation over actions becomes a maximum — the
+**Bellman optimality equation**:
+
+$$Q^*(s,a) = \mathbb{E}_{s'}\!\left[R(s,a) + \gamma \max_{a'} Q^*(s',a')\right]$$
+
+This is the equation the entire repository is trying to solve. Two facts about
+it drive everything that follows:
+
+1. **It is a fixed point, not a minimum.** $Q^*$ is the unique solution of
+   $Q = \mathcal{T}Q$, where $\mathcal{T}$ is the Bellman optimality operator.
+   $\mathcal{T}$ is a $\gamma$-contraction in the sup-norm, so iterating it
+   converges — *in the tabular case*. Once $Q$ is a neural network, the
+   contraction argument no longer applies, and stages 2–4 are about the
+   consequences.
+2. **It is defined by an expectation we cannot compute.** $\mathbb{E}_{s'}$
+   requires $P$. Model-free methods replace it with a sample — which is
+   temporal-difference learning.
+
