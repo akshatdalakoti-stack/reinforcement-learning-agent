@@ -83,3 +83,50 @@ class ReinforceAgent:
         (variance falls as 1/N).
     """
 
+    def __init__(
+        self,
+        obs_dim: int,
+        n_actions: int,
+        hidden_sizes: Sequence[int] = (128, 128),
+        lr: float = 1e-3,
+        gamma: float = 0.99,
+        baseline: str = "norm",
+        entropy_coef: float = 0.01,
+        batch_episodes: int = 1,
+        grad_clip: float = 0.5,
+        device: torch.device | str = "cpu",
+        seed: int | None = None,
+    ) -> None:
+        if baseline not in ("none", "mean", "norm"):
+            raise ValueError("baseline must be one of 'none', 'mean', 'norm'")
+        self.device = torch.device(device)
+        self.obs_dim, self.n_actions = int(obs_dim), int(n_actions)
+        self.gamma = float(gamma)
+        self.baseline = baseline
+        self.entropy_coef = float(entropy_coef)
+        self.batch_episodes = int(batch_episodes)
+        self.grad_clip = float(grad_clip)
+
+        if seed is not None:
+            torch.manual_seed(seed)
+        self.policy = PolicyNetwork(obs_dim, n_actions, hidden_sizes).to(self.device)
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=float(lr))
+
+        # Buffers for the episodes collected since the last update.
+        self._log_probs: list[torch.Tensor] = []
+        self._entropies: list[torch.Tensor] = []
+        self._returns: list[torch.Tensor] = []
+        self._episodes_buffered = 0
+
+        self.env_steps = 0
+        self.updates = 0
+        self.last_grad_norm = float("nan")
+
+    # ------------------------------------------------------------------ acting
+    def act(self, state: np.ndarray, greedy: bool = False) -> int:
+        """Sample an action.  Kept gradient-free for the evaluation harness."""
+        obs = torch.as_tensor(state, dtype=torch.float32, device=self.device)
+        with torch.no_grad():
+            action, _, _ = self.policy.act(obs, greedy=greedy)
+        return action
+
