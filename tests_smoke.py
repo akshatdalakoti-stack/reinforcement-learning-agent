@@ -97,3 +97,45 @@ def test_discounted_returns():
     check("reinforce: discounted returns", np.allclose(got, want, atol=1e-5), f"{got} vs {want}")
 
 
+def test_gae_limits():
+    """lambda=0 must give the TD error; lambda=1 the Monte-Carlo advantage."""
+    from ppo.rollout import compute_gae
+
+    rng = np.random.default_rng(0)
+    T = 12
+    rewards = rng.normal(size=T).astype(np.float32)
+    values = rng.normal(size=T).astype(np.float32)
+    dones = np.zeros(T, dtype=np.float32)
+    gamma, last_value = 0.99, 0.5
+
+    adv0, _ = compute_gae(rewards, values, dones, last_value, False, gamma, 0.0)
+    next_values = np.append(values[1:], last_value)
+    check("gae: lambda=0 equals the one-step TD error",
+          np.allclose(adv0, rewards + gamma * next_values - values, atol=1e-5))
+
+    adv1, ret1 = compute_gae(rewards, values, dones, last_value, False, gamma, 1.0)
+    mc = np.zeros(T, dtype=np.float64)
+    running = last_value
+    for t in reversed(range(T)):
+        running = rewards[t] + gamma * running
+        mc[t] = running
+    check("gae: lambda=1 equals the Monte-Carlo advantage",
+          np.allclose(adv1, mc - values, atol=1e-4))
+    check("gae: returns = advantages + values", np.allclose(ret1, adv1 + values, atol=1e-5))
+
+
+def test_gae_respects_done():
+    """A terminal flag must cut the bootstrap chain."""
+    from ppo.rollout import compute_gae
+
+    adv, _ = compute_gae(
+        np.array([1.0, 1.0, 1.0], dtype=np.float32),
+        np.array([5.0, 5.0, 5.0], dtype=np.float32),
+        np.array([0.0, 1.0, 0.0], dtype=np.float32),
+        last_value=5.0, last_done=False, gamma=0.99, gae_lambda=0.95,
+    )
+    # t=1 terminated, so its advantage is exactly r - V(s) with no bootstrap.
+    check("gae: done truncates bootstrapping", abs(float(adv[1]) - (1.0 - 5.0)) < 1e-5,
+          f"got {adv[1]:.4f}, want {1.0 - 5.0:.4f}")
+
+
