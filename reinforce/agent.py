@@ -130,3 +130,34 @@ class ReinforceAgent:
             action, _, _ = self.policy.act(obs, greedy=greedy)
         return action
 
+    def act_and_record(self, state: np.ndarray) -> int:
+        """Sample an action *and keep the log-probability in the graph*.
+
+        REINFORCE differentiates ``log pi(a_t|s_t)`` for the actions that were
+        actually taken, so those tensors must stay attached to the computation
+        graph until the update.  This is precisely why REINFORCE cannot reuse
+        old data: the graph belongs to the parameters as they were at sampling
+        time, and once they change the stored log-probs are stale.
+        """
+        obs = torch.as_tensor(state, dtype=torch.float32, device=self.device)
+        dist = self.policy.distribution(obs.unsqueeze(0))
+        action = dist.sample()
+        self._log_probs.append(dist.log_prob(action).squeeze(0))
+        self._entropies.append(dist.entropy().squeeze(0))
+        self.env_steps += 1
+        return int(action.item())
+
+    # ---------------------------------------------------------------- learning
+    def discounted_returns(self, rewards: Sequence[float]) -> torch.Tensor:
+        """G_t = r_t + gamma*r_{t+1} + ... computed backwards in O(T).
+
+            G_T     = r_T
+            G_t     = r_t + gamma * G_{t+1}
+        """
+        returns = np.empty(len(rewards), dtype=np.float32)
+        running = 0.0
+        for t in reversed(range(len(rewards))):
+            running = rewards[t] + self.gamma * running
+            returns[t] = running
+        return torch.as_tensor(returns, device=self.device)
+
