@@ -161,3 +161,12 @@ class ReinforceAgent:
             returns[t] = running
         return torch.as_tensor(returns, device=self.device)
 
+    def finish_episode(self, rewards: Sequence[float]) -> None:
+        """Convert one finished trajectory's rewards into returns."""
+        self._returns.append(self.discounted_returns(rewards))
+        self._episodes_buffered += 1
+
+    @property
+    def ready_to_update(self) -> bool:
+        return self._episodes_buffered >= self.batch_episodes
+
