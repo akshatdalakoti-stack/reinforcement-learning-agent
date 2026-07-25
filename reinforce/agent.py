@@ -170,3 +170,35 @@ class ReinforceAgent:
     def ready_to_update(self) -> bool:
         return self._episodes_buffered >= self.batch_episodes
 
+    def update(self) -> dict[str, float]:
+        """Apply the policy gradient over every buffered episode."""
+        if not self._returns:
+            return {"loss": float("nan"), "entropy": float("nan")}
+
+        log_probs = torch.stack(self._log_probs)
+        entropies = torch.stack(self._entropies)
+        returns = torch.cat(self._returns)
+
+        advantages = self._apply_baseline(returns)
+
+        # The minus sign turns gradient *ascent* on J into descent on L.
+        policy_loss = -(log_probs * advantages).mean()
+        entropy_bonus = entropies.mean()
+        loss = policy_loss - self.entropy_coef * entropy_bonus
+
+        self.optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        grad_norm = nn.utils.clip_grad_norm_(self.policy.parameters(), self.grad_clip)
+        self.optimizer.step()
+
+        self.updates += 1
+        self.last_grad_norm = float(grad_norm)
+        stats = {
+            "loss": float(policy_loss.item()),
+            "entropy": float(entropy_bonus.item()),
+            "grad_norm": float(grad_norm),
+            "return_std": float(returns.std().item()) if returns.numel() > 1 else 0.0,
+        }
+        self._clear()
+        return stats
+
