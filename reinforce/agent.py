@@ -219,3 +219,30 @@ class ReinforceAgent:
         self._returns.clear()
         self._episodes_buffered = 0
 
+    def gradient_snapshot(self) -> np.ndarray:
+        """Flattened gradient vector, for the variance study in stage 5.
+
+        Call immediately after ``backward()`` (before ``zero_grad``) to measure
+        how much the gradient direction differs between trajectories.
+        """
+        return np.concatenate(
+            [
+                p.grad.detach().cpu().numpy().ravel()
+                for p in self.policy.parameters()
+                if p.grad is not None
+            ]
+        )
+
+    # -------------------------------------------------------------- checkpoint
+    def config(self) -> dict:
+        return {
+            "obs_dim": self.obs_dim,
+            "n_actions": self.n_actions,
+            "gamma": self.gamma,
+            "baseline": self.baseline,
+            "entropy_coef": self.entropy_coef,
+            "hidden_sizes": [
+                m.out_features for m in self.policy.body if isinstance(m, nn.Linear)
+            ],
+        }
+
