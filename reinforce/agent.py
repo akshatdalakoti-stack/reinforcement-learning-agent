@@ -202,3 +202,20 @@ class ReinforceAgent:
         self._clear()
         return stats
 
+    def _apply_baseline(self, returns: torch.Tensor) -> torch.Tensor:
+        """Return the advantage weights, always detached from the graph."""
+        if self.baseline == "none":
+            return returns.detach()
+        centred = returns - returns.mean()
+        if self.baseline == "mean":
+            return centred.detach()
+        # 'norm': the epsilon guards the degenerate case of a single-step batch
+        # or a batch where every episode scored identically.
+        return (centred / (returns.std() + 1e-8)).detach()
+
+    def _clear(self) -> None:
+        self._log_probs.clear()
+        self._entropies.clear()
+        self._returns.clear()
+        self._episodes_buffered = 0
+
