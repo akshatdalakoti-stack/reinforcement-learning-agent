@@ -63,3 +63,19 @@ def parse_args(argv=None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def build_agent(args, spec, device) -> ReinforceAgent:
+    return ReinforceAgent(
+        obs_dim=spec.obs_dim,
+        n_actions=spec.n_actions,
+        hidden_sizes=args.hidden,
+        lr=args.lr,
+        gamma=args.gamma,
+        baseline=args.baseline,
+        entropy_coef=args.entropy_coef,
+        batch_episodes=args.batch_episodes,
+        grad_clip=args.grad_clip,
+        device=device,
+        seed=args.seed,
+    )
+
+
