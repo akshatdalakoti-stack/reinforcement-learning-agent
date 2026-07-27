@@ -31,3 +31,35 @@ from evaluation.utils import LOG_DIR, PLOT_DIR, get_device, resolve_dir, resolve
 from reinforce.agent import ReinforceAgent
 
 
+def parse_args(argv=None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="REINFORCE on a Gymnasium environment")
+    p.add_argument("--env", type=str, default="CartPole-v1")
+    p.add_argument("--episodes", type=int, default=1500)
+    p.add_argument("--max-env-steps", type=int, default=200_000)
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--gamma", type=float, default=0.99)
+    p.add_argument("--hidden", type=int, nargs="+", default=[128, 128])
+    p.add_argument("--baseline", choices=["none", "mean", "norm"], default="norm")
+    p.add_argument("--entropy-coef", type=float, default=0.01)
+    p.add_argument("--batch-episodes", type=int, default=1,
+                   help="trajectories averaged per update; >1 cuts variance as 1/N")
+    p.add_argument("--grad-clip", type=float, default=0.5)
+    p.add_argument("--gradient-variance", type=int, default=0,
+                   help="estimate the gradient this many times at fixed parameters")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--device", type=str, default="auto")
+    p.add_argument("--window", type=int, default=50)
+    p.add_argument("--eval-episodes", type=int, default=20)
+    p.add_argument("--eval-every", type=int, default=5_000,
+                   help="env steps between greedy evaluations during training; "
+                        "0 disables. Training reward reflects the exploring "
+                        "policy, so this is the honest progress signal.")
+    p.add_argument("--eval-rollouts", type=int, default=5,
+                   help="episodes per periodic evaluation")
+    p.add_argument("--run-name", type=str, default="reinforce_cartpole")
+    p.add_argument("--no-plots", action="store_true")
+    p.add_argument("--no-save", action="store_true")
+    p.add_argument("--quiet", action="store_true")
+    return p.parse_args(argv)
+
+
