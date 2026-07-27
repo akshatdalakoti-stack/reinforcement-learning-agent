@@ -246,3 +246,33 @@ class ReinforceAgent:
             ],
         }
 
+    def save(self, path: str) -> str:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        torch.save(
+            {
+                "policy": self.policy.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "env_steps": self.env_steps,
+                "config": json.dumps(self.config()),
+            },
+            path,
+        )
+        return path
+
+    @classmethod
+    def load(cls, path: str, device: torch.device | str = "cpu", **overrides):
+        ckpt = torch.load(path, map_location=device, weights_only=False)
+        cfg = json.loads(ckpt["config"])
+        agent = cls(
+            obs_dim=cfg["obs_dim"],
+            n_actions=cfg["n_actions"],
+            hidden_sizes=cfg["hidden_sizes"],
+            gamma=cfg["gamma"],
+            baseline=cfg["baseline"],
+            entropy_coef=cfg["entropy_coef"],
+            device=device,
+            **overrides,
+        )
+        agent.policy.load_state_dict(ckpt["policy"])
+        agent.env_steps = ckpt.get("env_steps", 0)
+        return agent
