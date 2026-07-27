@@ -271,3 +271,31 @@ it drive everything that follows:
    requires $P$. Model-free methods replace it with a sample — which is
    temporal-difference learning.
 
+### Temporal-difference learning
+
+Given one sampled transition $(s,a,r,s')$, the sampled version of the right-hand
+side is the **TD target**, and its disagreement with the current estimate is the
+**TD error**:
+
+$$\delta_t = \underbrace{r + \gamma \max_{a'} Q(s',a')}_{\text{TD target}} - Q(s,a)$$
+
+and we move the estimate a little way toward the target:
+
+$$Q(s,a) \leftarrow Q(s,a) + \alpha\,\delta_t$$
+
+TD learning sits between two extremes:
+
+| | Monte-Carlo | TD(0) |
+|---|---|---|
+| target | actual return $G_t$ | $r + \gamma Q(s',a')$ |
+| needs | the full episode | one step |
+| bias | none | inherits errors in $Q$ |
+| variance | high (sums all future randomness) | low |
+
+The word for using your own estimate inside your own target is
+**bootstrapping**, and it is the single most consequential idea in this
+repository. It buys per-step learning and low variance. It costs bias, and — as
+stages 2–4 show — it is the ingredient that makes deep value learning unstable.
+This same tension reappears at stage 6 as the $n$-step dial, and at stage 7 as
+GAE's $\lambda$.
+
