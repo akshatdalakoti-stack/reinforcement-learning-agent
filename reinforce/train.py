@@ -79,3 +79,17 @@ def build_agent(args, spec, device) -> ReinforceAgent:
     )
 
 
+def collect_episode(agent: ReinforceAgent, env, seed: int | None = None):
+    """Run one full trajectory, recording log-probs inside the agent."""
+    state, _ = env.reset(seed=seed)
+    rewards: list[float] = []
+    while True:
+        action = agent.act_and_record(state)
+        state, reward, terminated, truncated, _ = env.step(action)
+        rewards.append(float(reward))
+        if terminated or truncated:
+            break
+    agent.finish_episode(rewards)
+    return rewards
+
+
