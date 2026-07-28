@@ -140,3 +140,63 @@ def measure_gradient_variance(agent: ReinforceAgent, env, n_samples: int, seed: 
     }
 
 
+def train(args) -> tuple[ReinforceAgent, MetricsRecorder, object, object]:
+    set_seed(args.seed)
+    device = get_device(args.device)
+
+    env = make_env(args.env, seed=args.seed)
+    spec = env_spec(env)
+    agent = build_agent(args, spec, device)
+    recorder = MetricsRecorder(run_name=args.run_name, config=vars(args))
+    evaluator = PeriodicEvaluator(
+        make_env(args.env, seed=args.seed + 424_242),
+        every=args.eval_every, episodes=args.eval_rollouts,
+    )
+
+    if not args.quiet:
+        print(f"[reinforce] {args.env}  baseline={args.baseline}  "
+              f"batch_episodes={args.batch_episodes}  device={device}  seed={args.seed}")
+
+    pending: list[tuple[int, float, int]] = []
+    for episode in range(args.episodes):
+        rewards = collect_episode(agent, env, seed=args.seed * 1000 + episode)
+        pending.append((episode, float(sum(rewards)), len(rewards)))
+
+        if not agent.ready_to_update:
+            continue
+
+        stats = agent.update()
+        eval_reward = evaluator.maybe_evaluate(agent, agent.env_steps)
+        shared = {} if eval_reward is None else {"eval_reward": eval_reward}
+        # One update can cover several episodes; log each with the shared stats
+        # so the x-axis stays "episodes" and lines up with the other algorithms.
+        for ep, ep_reward, ep_len in pending:
+            recorder.record_episode(
+                episode=ep,
+                reward=ep_reward,
+                length=ep_len,
+                env_steps=agent.env_steps,
+                loss=stats["loss"],
+                entropy=stats["entropy"],
+                grad_norm=stats["grad_norm"],
+                return_std=stats["return_std"],
+                **shared,
+            )
+        pending.clear()
+
+        if not args.quiet and (episode + 1) % max(1, args.episodes // 12) == 0:
+            avg = recorder.rewards[-args.window:].mean()
+            print(
+                f"  ep {episode + 1:>5}/{args.episodes}  steps={agent.env_steps:>7}  "
+                f"avg{args.window}={avg:7.1f}  entropy={stats['entropy']:.3f}  "
+                f"|grad|={stats['grad_norm']:.3f}  return_std={stats['return_std']:7.1f}"
+            )
+
+        if agent.env_steps >= args.max_env_steps:
+            if not args.quiet:
+                print(f"  reached the {args.max_env_steps} env-step budget; stopping")
+            break
+
+    return agent, recorder, env, evaluator
+
+
