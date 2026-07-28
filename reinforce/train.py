@@ -93,3 +93,50 @@ def collect_episode(agent: ReinforceAgent, env, seed: int | None = None):
     return rewards
 
 
+def measure_gradient_variance(agent: ReinforceAgent, env, n_samples: int, seed: int) -> dict:
+    """How much do independent single-trajectory gradients disagree?
+
+    The parameters are held fixed: every estimate is of the *same* quantity
+    ``grad J(theta)``, differing only in the sampled trajectory.  We report the
+    mean pairwise cosine similarity, plus the ratio of the mean estimate's norm
+    to the mean of the individual norms -- a signal-to-noise measure that would
+    be 1.0 if every estimate agreed and near 0 if they were pure noise.
+    """
+    snapshot = copy.deepcopy(agent.policy.state_dict())
+    gradients = []
+
+    for i in range(n_samples):
+        agent._clear()
+        collect_episode(agent, env, seed=seed + 50_000 + i)
+        log_probs = torch.stack(agent._log_probs)
+        returns = torch.cat(agent._returns)
+        advantages = agent._apply_baseline(returns)
+        loss = -(log_probs * advantages).mean()
+
+        agent.optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        gradients.append(agent.gradient_snapshot())
+        # No optimiser step is taken, so the parameters are already unchanged;
+        # restoring explicitly documents the invariant this probe depends on.
+        agent.policy.load_state_dict(snapshot)
+
+    agent.optimizer.zero_grad(set_to_none=True)
+    agent._clear()
+
+    G = np.stack(gradients)
+    norms = np.linalg.norm(G, axis=1)
+    unit = G / np.maximum(norms[:, None], 1e-12)
+    sims = unit @ unit.T
+    off_diagonal = sims[~np.eye(len(G), dtype=bool)]
+
+    mean_grad_norm = float(np.linalg.norm(G.mean(axis=0)))
+    return {
+        "samples": n_samples,
+        "mean_cosine_similarity": float(off_diagonal.mean()),
+        "std_cosine_similarity": float(off_diagonal.std()),
+        "mean_individual_norm": float(norms.mean()),
+        "norm_of_mean": mean_grad_norm,
+        "snr": float(mean_grad_norm / max(norms.mean(), 1e-12)),
+    }
+
+
