@@ -53,3 +53,28 @@ class Actor(nn.Module):
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
         return self.net(obs)
 
+    def distribution(self, obs: torch.Tensor) -> Categorical:
+        return Categorical(logits=self.forward(obs))
+
+
+class Critic(nn.Module):
+    """V(s): the expected return from ``s`` under the *current* policy.
+
+    Note what this is not.  DQN's network learns ``Q(s,a)``, the value of each
+    action, because it derives its policy from those values by ``argmax``.  The
+    critic here learns only ``V(s)``, a single number per state, because it is
+    not choosing anything -- the actor does that.  Estimating one number instead
+    of ``n_actions`` numbers is a strictly easier regression problem, and it is
+    all the actor needs to know whether an action beat expectations.
+    """
+
+    def __init__(self, obs_dim: int, hidden_sizes: Sequence[int] = (128, 128)):
+        super().__init__()
+        self.obs_dim = int(obs_dim)
+        # gain 1.0 on a value head: unlike the policy head there is no reason to
+        # start near zero output beyond keeping the initial TD errors modest.
+        self.net = _mlp(obs_dim, hidden_sizes, 1, out_gain=1.0)
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        """``(batch, obs_dim)`` -> ``(batch,)``."""
+        return self.net(obs).squeeze(-1)
