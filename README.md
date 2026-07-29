@@ -299,3 +299,29 @@ stages 2–4 show — it is the ingredient that makes deep value learning unstab
 This same tension reappears at stage 6 as the $n$-step dial, and at stage 7 as
 GAE's $\lambda$.
 
+### Exploration vs exploitation
+
+The agent only learns about actions it takes, and it only takes actions it
+currently believes are good. Left alone, that loop is self-confirming: an action
+undervalued by early noise is never tried again, so the error is never
+corrected.
+
+This project uses four different answers to that problem, and it is worth
+noticing that they are genuinely different in kind:
+
+| mechanism | where | how it works |
+|---|---|---|
+| $\varepsilon$-greedy | stages 1–4 | act randomly with probability $\varepsilon$ |
+| exploring starts | stage 1 | begin episodes in random states |
+| stochastic policy | stages 5–7 | exploration *is* the policy; it is learned |
+| entropy bonus | stages 5–7 | pay the policy to stay uncertain |
+
+The shift at stage 5 is a real conceptual change, not a tuning detail. Under
+$\varepsilon$-greedy, exploration is bolted on from outside the model and the
+objective knows nothing about it. Under a stochastic policy, exploration is part
+of the thing being optimised — which means it can be shaped by the objective,
+and also that it can *collapse*, which is a failure mode $\varepsilon$-greedy
+does not have.
+
+---
+
