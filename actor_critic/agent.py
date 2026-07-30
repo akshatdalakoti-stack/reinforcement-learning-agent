@@ -84,3 +84,48 @@ class ActorCriticAgent:
         and it keeps the effective policy step size stable as returns grow.
     """
 
+    def __init__(
+        self,
+        obs_dim: int,
+        n_actions: int,
+        hidden_sizes: Sequence[int] = (128, 128),
+        actor_lr: float = 3e-4,
+        critic_lr: float = 1e-3,
+        gamma: float = 0.99,
+        n_steps: int = 8,
+        value_coef: float = 0.5,
+        entropy_coef: float = 0.01,
+        grad_clip: float = 0.5,
+        normalize_advantages: bool = True,
+        device: torch.device | str = "cpu",
+        seed: int | None = None,
+    ) -> None:
+        self.device = torch.device(device)
+        self.obs_dim, self.n_actions = int(obs_dim), int(n_actions)
+        self.gamma = float(gamma)
+        self.n_steps = int(n_steps)
+        self.value_coef = float(value_coef)
+        self.entropy_coef = float(entropy_coef)
+        self.grad_clip = float(grad_clip)
+        self.normalize_advantages = bool(normalize_advantages)
+
+        if seed is not None:
+            torch.manual_seed(seed)
+        self.actor = Actor(obs_dim, n_actions, hidden_sizes).to(self.device)
+        self.critic = Critic(obs_dim, hidden_sizes).to(self.device)
+
+        # Separate optimisers: the critic can safely use a larger learning rate
+        # because it is solving a supervised regression, while a large step on
+        # the actor can collapse the policy distribution irrecoverably.
+        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=float(actor_lr))
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=float(critic_lr))
+
+        # Rollout storage (cleared after every update).
+        self._states: list[np.ndarray] = []
+        self._actions: list[int] = []
+        self._rewards: list[float] = []
+        self._dones: list[bool] = []
+
+        self.env_steps = 0
+        self.updates = 0
+
