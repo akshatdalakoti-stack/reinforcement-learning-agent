@@ -139,3 +139,50 @@ def test_gae_respects_done():
           f"got {adv[1]:.4f}, want {1.0 - 5.0:.4f}")
 
 
+def test_gae_terminal_at_rollout_boundary():
+    """A rollout that ends exactly on a termination must not bootstrap.
+
+    Regression test. PPO's rollouts deliberately cross episode boundaries, so
+    the training loop resets the environment mid-rollout. If it then hands
+    ``update()`` the freshly-reset observation with ``last_done=False``, GAE
+    splices two unrelated episodes together at the seam. The loop tracks the
+    true successor separately to prevent exactly this.
+    """
+    from ppo.rollout import compute_gae
+
+    rewards = np.array([1.0, 1.0, 2.0], dtype=np.float32)
+    values = np.array([5.0, 5.0, 5.0], dtype=np.float32)
+    dones = np.array([0.0, 0.0, 1.0], dtype=np.float32)   # terminated on the last step
+
+    correct, _ = compute_gae(rewards, values, dones, last_value=42.0, last_done=True,
+                             gamma=0.99, gae_lambda=0.95)
+    wrong, _ = compute_gae(rewards, values, dones, last_value=42.0, last_done=False,
+                           gamma=0.99, gae_lambda=0.95)
+    check("gae: terminal at the rollout boundary zeroes the bootstrap",
+          abs(float(correct[-1]) - (2.0 - 5.0)) < 1e-5,
+          f"got {correct[-1]:.4f}, want {2.0 - 5.0:.4f}")
+    check("gae: mislabelling that boundary would corrupt the advantage",
+          abs(float(wrong[-1]) - float(correct[-1])) > 1.0,
+          "the two cases must differ, or the test proves nothing")
+
+
+def test_replay_buffer():
+    """Circular overwrite, correct shapes, and a correct latest()."""
+    from dqn.replay_buffer import ReplayBuffer
+
+    buf = ReplayBuffer(capacity=5, obs_dim=3, seed=0)
+    for i in range(8):
+        buf.push(np.full(3, i, dtype=np.float32), i % 2, float(i),
+                 np.full(3, i + 1, dtype=np.float32), i == 7)
+    check("replay: length caps at capacity", len(buf) == 5)
+    check("replay: oldest entries were overwritten", 0.0 not in set(buf.rewards.tolist()))
+
+    batch = buf.sample(4)
+    check("replay: batch shapes",
+          batch.states.shape == (4, 3) and batch.actions.shape == (4, 1)
+          and batch.rewards.shape == (4, 1) and batch.dones.shape == (4, 1))
+    latest = buf.latest(1)
+    check("replay: latest() returns the newest transition",
+          float(latest.rewards[0, 0]) == 7.0 and float(latest.dones[0, 0]) == 1.0)
+
+
