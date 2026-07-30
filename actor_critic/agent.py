@@ -129,3 +129,11 @@ class ActorCriticAgent:
         self.env_steps = 0
         self.updates = 0
 
+    # ------------------------------------------------------------------ acting
+    @torch.no_grad()
+    def act(self, state: np.ndarray, greedy: bool = False) -> int:
+        obs = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        dist = self.actor.distribution(obs)
+        action = dist.probs.argmax(dim=-1) if greedy else dist.sample()
+        return int(action.item())
+
