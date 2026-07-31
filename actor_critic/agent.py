@@ -154,3 +154,34 @@ class ActorCriticAgent:
         self._dones.append(bool(terminated))
         self.env_steps += 1
 
+    @property
+    def ready_to_update(self) -> bool:
+        return len(self._states) >= self.n_steps
+
+    def compute_returns(self, last_state: np.ndarray, last_done: bool) -> torch.Tensor:
+        """n-step bootstrapped returns for the buffered rollout.
+
+        Walking backwards from the end::
+
+            R = 0 if the rollout ended in a true terminal, else V(s_last)
+            R_t = r_t + gamma * (1 - done_t) * R_{t+1}
+
+        ``last_done`` must be *termination*, not truncation.  If the rollout was
+        cut short by a time limit the future is still real, so we bootstrap
+        through it with ``V(s_last)``.
+        """
+        with torch.no_grad():
+            if last_done:
+                running = 0.0
+            else:
+                obs = torch.as_tensor(
+                    last_state, dtype=torch.float32, device=self.device
+                ).unsqueeze(0)
+                running = float(self.critic(obs).item())
+
+        returns = np.empty(len(self._rewards), dtype=np.float32)
+        for t in reversed(range(len(self._rewards))):
+            running = self._rewards[t] + self.gamma * (0.0 if self._dones[t] else running)
+            returns[t] = running
+        return torch.as_tensor(returns, device=self.device)
+
