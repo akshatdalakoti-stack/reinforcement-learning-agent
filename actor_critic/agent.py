@@ -137,3 +137,20 @@ class ActorCriticAgent:
         action = dist.probs.argmax(dim=-1) if greedy else dist.sample()
         return int(action.item())
 
+    # --------------------------------------------------------------- rollouts
+    def store(self, state: np.ndarray, action: int, reward: float, terminated: bool) -> None:
+        """Buffer one transition.  No log-probs are kept here.
+
+        Unlike REINFORCE, the log-probability is *recomputed* at update time
+        from the stored state and action.  Within a single on-policy rollout
+        this is mathematically identical (the parameters have not changed yet)
+        but it keeps no graph alive across the rollout, which matters once
+        rollouts get long -- and it is the same code shape PPO needs, where
+        recomputation under *changed* parameters is the entire point.
+        """
+        self._states.append(np.asarray(state, dtype=np.float32))
+        self._actions.append(int(action))
+        self._rewards.append(float(reward))
+        self._dones.append(bool(terminated))
+        self.env_steps += 1
+
