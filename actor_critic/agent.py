@@ -240,3 +240,9 @@ class ActorCriticAgent:
         self._clear()
         return stats
 
+    def _clear(self) -> None:
+        self._states.clear()
+        self._actions.clear()
+        self._rewards.clear()
+        self._dones.clear()
+
