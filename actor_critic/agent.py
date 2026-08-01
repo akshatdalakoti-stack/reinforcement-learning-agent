@@ -246,3 +246,16 @@ class ActorCriticAgent:
         self._rewards.clear()
         self._dones.clear()
 
+    # -------------------------------------------------------------- checkpoint
+    def config(self) -> dict:
+        return {
+            "obs_dim": self.obs_dim,
+            "n_actions": self.n_actions,
+            "gamma": self.gamma,
+            "n_steps": self.n_steps,
+            "entropy_coef": self.entropy_coef,
+            "hidden_sizes": [
+                m.out_features for m in self.actor.net if isinstance(m, nn.Linear)
+            ][:-1],
+        }
+
