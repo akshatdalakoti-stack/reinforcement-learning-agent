@@ -185,3 +185,58 @@ class ActorCriticAgent:
             returns[t] = running
         return torch.as_tensor(returns, device=self.device)
 
+    # ---------------------------------------------------------------- learning
+    def update(self, last_state: np.ndarray, last_done: bool) -> dict[str, float]:
+        """One actor update and one critic update on the buffered rollout."""
+        if not self._states:
+            return {"loss": float("nan"), "entropy": float("nan")}
+
+        states = torch.as_tensor(np.array(self._states), device=self.device)
+        actions = torch.as_tensor(np.array(self._actions), dtype=torch.int64, device=self.device)
+        returns = self.compute_returns(last_state, last_done)
+
+        values = self.critic(states)
+
+        # `detach` on the advantage is essential.  The advantage is a *weight*
+        # on the policy's log-probability; letting the actor's gradient flow
+        # into the critic through it would optimise the critic to make the
+        # actor's loss small, which is not what we want the critic to learn.
+        advantages = (returns - values).detach()
+        if self.normalize_advantages and advantages.numel() > 1:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        dist = self.actor.distribution(states)
+        log_probs = dist.log_prob(actions)
+        entropy = dist.entropy().mean()
+
+        policy_loss = -(log_probs * advantages).mean()
+        actor_loss = policy_loss - self.entropy_coef * entropy
+
+        self.actor_optimizer.zero_grad(set_to_none=True)
+        actor_loss.backward()
+        actor_grad = nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_clip)
+        self.actor_optimizer.step()
+
+        # The critic regresses V(s) onto the same n-step returns.  Huber rather
+        # than MSE for the same reason as DQN: it bounds the gradient when the
+        # value estimate is still far off.
+        value_loss = F.smooth_l1_loss(self.critic(states), returns)
+
+        self.critic_optimizer.zero_grad(set_to_none=True)
+        (self.value_coef * value_loss).backward()
+        critic_grad = nn.utils.clip_grad_norm_(self.critic.parameters(), self.grad_clip)
+        self.critic_optimizer.step()
+
+        self.updates += 1
+        stats = {
+            "loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "entropy": float(entropy.item()),
+            "advantage_std": float(advantages.std().item()) if advantages.numel() > 1 else 0.0,
+            "mean_value": float(values.mean().item()),
+            "actor_grad_norm": float(actor_grad),
+            "critic_grad_norm": float(critic_grad),
+        }
+        self._clear()
+        return stats
+
