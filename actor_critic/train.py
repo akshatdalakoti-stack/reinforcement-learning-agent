@@ -52,3 +52,21 @@ def parse_args(argv=None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def build_agent(args, spec, device) -> ActorCriticAgent:
+    return ActorCriticAgent(
+        obs_dim=spec.obs_dim,
+        n_actions=spec.n_actions,
+        hidden_sizes=args.hidden,
+        actor_lr=args.actor_lr,
+        critic_lr=args.critic_lr,
+        gamma=args.gamma,
+        n_steps=args.n_steps,
+        value_coef=args.value_coef,
+        entropy_coef=args.entropy_coef,
+        grad_clip=args.grad_clip,
+        normalize_advantages=not args.no_advantage_norm,
+        device=device,
+        seed=args.seed,
+    )
+
+
