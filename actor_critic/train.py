@@ -194,3 +194,5 @@ def main(argv=None):
     return agent, recorder, result
 
 
+if __name__ == "__main__":
+    main()
