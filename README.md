@@ -327,3 +327,88 @@ does not have.
 
 ## Part II — The progression
 
+### Stage 1 — Tabular Q-learning
+
+> `q_learning/` · GridWorld · `python -m q_learning.train --exploring-starts --alpha-schedule visit_count`
+
+**1. The problem it solves.** Find an optimal policy in an unknown MDP, using
+only sampled experience — no access to $P$ or $R$.
+
+**2. Why nothing simpler suffices.** Value iteration solves the same MDP in a
+few lines, but it *reads the transition model*. An agent dropped into a world it
+has not been handed a specification for cannot do that. Q-learning replaces the
+expectation $\mathbb{E}_{s'}$ in the Bellman equation with a sample, and the
+sample is something the agent can actually obtain by acting.
+
+**3. The mathematical idea.** The Bellman optimality equation solved by
+stochastic approximation:
+
+$$Q(s,a) \leftarrow Q(s,a) + \alpha\big[\underbrace{r + \gamma \max_{a'} Q(s',a')}_{\text{TD target}} - Q(s,a)\big]$$
+
+Two properties deserve emphasis, because both are inherited by every later
+stage:
+
+- **Off-policy.** The $\max$ evaluates the *greedy* policy, while the action
+  taken came from an $\varepsilon$-greedy behaviour policy. The agent explores
+  with one policy and learns the value of another. This is what will make replay
+  buffers legal in stage 3 — and illegal in stage 5.
+- **Bootstrapping.** The target uses the agent's own current estimate of $s'$.
+
+**4. How training changes.** Learning happens once per environment step, not
+once per episode. There is no dataset, no epochs, no loss in the supervised
+sense — just repeated application of a contraction mapping to a table.
+
+**5. Failure modes.**
+- **Coverage.** Convergence to $Q^*$ requires visiting every $(s,a)$ pair
+  infinitely often. With a fixed start state, pairs off the optimal path are
+  visited almost never, and their values stay wrong.
+- **Constant $\alpha$ never converges.** Tabular Q-learning converges when the
+  step sizes satisfy the Robbins–Monro conditions
+  $\sum_t \alpha_t = \infty$ and $\sum_t \alpha_t^2 < \infty$. A constant
+  $\alpha$ violates the second, so in a *stochastic* environment the estimates
+  bounce around $Q^*$ forever with a variance floor proportional to $\alpha$.
+- **It does not scale.** One independent parameter per $(s,a)$ pair. Nothing
+  learned about one state transfers to a similar one. This is what stage 2 fixes.
+
+**6. The experiment.** `experiments/exp1_exploring_starts.py`. GridWorld is small
+enough to solve exactly by value iteration, so we can report the *true* error
+rather than a proxy. Four variants crossing fixed/exploring starts with
+constant/decaying $\alpha$, 5 seeds, 6000 episodes:
+
+| variant | $\max_{s,a} \Vert Q - Q^* \Vert$ | optimal actions | min visits per $(s,a)$ |
+|---|---|---|---|
+| fixed start, constant $\alpha$ | 0.262 | 16.4 / 18 | 33 |
+| fixed start, $\alpha=1/n^{0.75}$ | 0.262 | 16.2 / 18 | 27 |
+| exploring starts, constant $\alpha$ | 0.188 | 17.0 / 18 | 138 |
+| exploring starts, $\alpha=1/n^{0.75}$ | **0.158** | **17.6 / 18** | 129 |
+
+The update rule is byte-for-byte identical in all four rows. What differs is
+which transitions the agent sees and how it averages them — and that alone
+moves the error by 40%. Note that the decaying step size only helps *once
+coverage is fixed*: rows 1 and 2 are identical, because a better averaging rule
+cannot help a state you never visit.
+
+![Convergence to Q*](results/plots/exp1_exploring_starts.png)
+
+The figure separates the two effects by their *shape*, not just their level. The
+two constant-$\alpha$ curves (blue, green) oscillate forever — that is the
+Robbins–Monro violation, a variance floor proportional to $\alpha$ that no
+amount of extra training removes. The two $\alpha = 1/n^{0.75}$ curves are
+smooth, because the step sizes are square-summable and the estimates actually
+settle. But settling is not the same as being *right*: the red curve settles
+early and stays at 0.26, having converged confidently to a wrong answer in the
+states its fixed start rarely reaches. Only the purple curve — coverage *and* a
+valid step-size schedule — keeps descending.
+
+![Q-learning learning curve](results/plots/q_learning_gridworld_curve.png)
+
+The learned policy, and the exact optimum it is converging to:
+
+![Learned policy](results/plots/q_learning_gridworld_policy.png)
+
+The pale top-right corner is the coverage problem made visible: those states lie
+off every good path from the start, so their values are still near their
+initialisation while the rest of the grid has converged.
+
+---
+
