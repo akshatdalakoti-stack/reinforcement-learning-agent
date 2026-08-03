@@ -70,3 +70,76 @@ def build_agent(args, spec, device) -> ActorCriticAgent:
     )
 
 
+def train(args) -> tuple[ActorCriticAgent, MetricsRecorder, object, object]:
+    set_seed(args.seed)
+    device = get_device(args.device)
+
+    env = make_env(args.env, seed=args.seed)
+    spec = env_spec(env)
+    agent = build_agent(args, spec, device)
+    recorder = MetricsRecorder(run_name=args.run_name, config=vars(args))
+    evaluator = PeriodicEvaluator(
+        make_env(args.env, seed=args.seed + 424_242),
+        every=args.eval_every, episodes=args.eval_rollouts,
+    )
+
+    if not args.quiet:
+        print(f"[actor-critic] {args.env}  n_steps={args.n_steps}  "
+              f"device={device}  seed={args.seed}")
+
+    last_stats = {"loss": float("nan"), "entropy": float("nan"),
+                  "value_loss": float("nan"), "mean_value": float("nan")}
+
+    for episode in range(args.episodes):
+        state, _ = env.reset(seed=args.seed * 1000 + episode)
+        ep_reward, ep_len = 0.0, 0
+
+        while True:
+            action = agent.act(state)
+            next_state, reward, terminated, truncated, _ = env.step(action)
+            agent.store(state, action, float(reward), terminated)
+
+            state = next_state
+            ep_reward += float(reward)
+            ep_len += 1
+            done = terminated or truncated
+
+            # Update on a full rollout *or* at the end of an episode, so the
+            # final partial rollout is not discarded.
+            if agent.ready_to_update or done:
+                last_stats = agent.update(last_state=state, last_done=terminated)
+            if done:
+                break
+
+        eval_reward = evaluator.maybe_evaluate(agent, agent.env_steps)
+        extra = {} if eval_reward is None else {"eval_reward": eval_reward}
+        recorder.record_episode(
+            episode=episode,
+            reward=ep_reward,
+            length=ep_len,
+            env_steps=agent.env_steps,
+            loss=last_stats["loss"],
+            entropy=last_stats["entropy"],
+            value_loss=last_stats["value_loss"],
+            mean_value=last_stats["mean_value"],
+            updates=agent.updates,
+            **extra,
+        )
+
+        if not args.quiet and (episode + 1) % max(1, args.episodes // 12) == 0:
+            avg = recorder.rewards[-args.window:].mean()
+            print(
+                f"  ep {episode + 1:>4}/{args.episodes}  steps={agent.env_steps:>7}  "
+                f"avg{args.window}={avg:7.1f}  entropy={last_stats['entropy']:.3f}  "
+                f"v_loss={last_stats['value_loss']:8.3f}  "
+                f"meanV={last_stats['mean_value']:7.2f}  updates={agent.updates}"
+            )
+
+        if agent.env_steps >= args.max_env_steps:
+            if not args.quiet:
+                print(f"  reached the {args.max_env_steps} env-step budget; stopping")
+            break
+
+    return agent, recorder, env, evaluator
+
+
