@@ -186,3 +186,23 @@ def test_replay_buffer():
           float(latest.rewards[0, 0]) == 7.0 and float(latest.dones[0, 0]) == 1.0)
 
 
+def test_dqn_target_is_detached():
+    """No gradient may flow into the bootstrap target."""
+    from dqn.agent import DQNAgent
+
+    agent = DQNAgent(obs_dim=4, n_actions=2, buffer_size=200, batch_size=8,
+                     learning_starts=0, train_freq=1, seed=0)
+    for i in range(50):
+        agent.observe(np.random.randn(4).astype(np.float32), i % 2, 1.0,
+                      np.random.randn(4).astype(np.float32), False)
+    before = [p.detach().clone() for p in agent.target_net.parameters()]
+    agent.train_step()
+    check("dqn: target network unchanged by a gradient step",
+          all(torch.equal(b, a) for b, a in zip(before, agent.target_net.parameters())))
+    check("dqn: target network carries no grads",
+          all(p.grad is None for p in agent.target_net.parameters()))
+    check("dqn: online network did receive gradients",
+          any(p.grad is not None and p.grad.abs().sum() > 0
+              for p in agent.online_net.parameters()))
+
+
