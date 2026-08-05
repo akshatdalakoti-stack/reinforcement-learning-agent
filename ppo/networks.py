@@ -83,3 +83,30 @@ class ActorCriticNetwork(nn.Module):
         )
         return self.policy_head(policy_features), self.value_head(value_features).squeeze(-1)
 
+    def distribution(self, obs: torch.Tensor) -> Categorical:
+        logits, _ = self.forward(obs)
+        return Categorical(logits=logits)
+
+    @torch.no_grad()
+    def act(self, obs: torch.Tensor, greedy: bool = False):
+        """Sample an action and return ``(action, log_prob, value)``.
+
+        The returned ``log_prob`` is ``log pi_old(a|s)`` -- the denominator of
+        PPO's probability ratio.  It must be captured *at collection time*,
+        because after the first optimisation epoch the network no longer
+        represents the policy that generated this data.
+        """
+        logits, value = self.forward(obs)
+        dist = Categorical(logits=logits)
+        action = dist.probs.argmax(dim=-1) if greedy else dist.sample()
+        return action, dist.log_prob(action), value
+
+    def evaluate_actions(self, obs: torch.Tensor, actions: torch.Tensor):
+        """Re-score stored actions under the *current* parameters.
+
+        Returns ``(log_probs, values, entropy)``.  This is the numerator of the
+        ratio, and unlike :meth:`act` it keeps the graph so gradients flow.
+        """
+        logits, values = self.forward(obs)
+        dist = Categorical(logits=logits)
+        return dist.log_prob(actions), values, dist.entropy()
