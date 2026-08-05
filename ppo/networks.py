@@ -43,3 +43,43 @@ def _trunk(obs_dim: int, hidden_sizes: Sequence[int]) -> tuple[nn.Sequential, in
     return nn.Sequential(*layers), last
 
 
+class ActorCriticNetwork(nn.Module):
+    """Policy logits and a state value from one module.
+
+    Orthogonal initialisation with ``gain=sqrt(2)`` on Tanh layers, ``0.01`` on
+    the policy head and ``1.0`` on the value head is the standard PPO recipe.
+    The tiny policy-head gain is the one that matters most: it makes the initial
+    policy near-uniform, so the agent starts with maximum entropy and the
+    clipping ratio starts at exactly 1.
+    """
+
+    def __init__(
+        self,
+        obs_dim: int,
+        n_actions: int,
+        hidden_sizes: Sequence[int] = (64, 64),
+        shared_trunk: bool = True,
+    ) -> None:
+        super().__init__()
+        self.obs_dim, self.n_actions = int(obs_dim), int(n_actions)
+        self.shared_trunk = bool(shared_trunk)
+        self.hidden_sizes = list(hidden_sizes)
+
+        if self.shared_trunk:
+            self.trunk, feat = _trunk(obs_dim, hidden_sizes)
+            self.value_trunk = None
+        else:
+            self.trunk, feat = _trunk(obs_dim, hidden_sizes)
+            self.value_trunk, _ = _trunk(obs_dim, hidden_sizes)
+
+        self.policy_head = _layer(feat, n_actions, gain=0.01)
+        self.value_head = _layer(feat, 1, gain=1.0)
+
+    def forward(self, obs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """``obs -> (logits, values)``."""
+        policy_features = self.trunk(obs)
+        value_features = (
+            policy_features if self.shared_trunk else self.value_trunk(obs)
+        )
+        return self.policy_head(policy_features), self.value_head(value_features).squeeze(-1)
+
