@@ -82,3 +82,30 @@ def compute_gae(
     return advantages, returns.astype(np.float32)
 
 
+class RolloutBuffer:
+    """Fixed-length on-policy storage.
+
+    Unlike :class:`~dqn.replay_buffer.ReplayBuffer` this is emptied after every
+    update.  It has to be: PPO's ratio is only meaningful against the policy
+    that actually generated the data, so once the policy has moved past the
+    trust region the data is no longer usable, however recent it looks.
+    """
+
+    def __init__(self, size: int, obs_dim: int, device: torch.device | str = "cpu") -> None:
+        self.size = int(size)
+        self.obs_dim = int(obs_dim)
+        self.device = torch.device(device)
+
+        self.states = np.zeros((self.size, self.obs_dim), dtype=np.float32)
+        self.actions = np.zeros(self.size, dtype=np.int64)
+        self.rewards = np.zeros(self.size, dtype=np.float32)
+        self.dones = np.zeros(self.size, dtype=np.float32)
+        self.log_probs = np.zeros(self.size, dtype=np.float32)
+        self.values = np.zeros(self.size, dtype=np.float32)
+
+        self.advantages = np.zeros(self.size, dtype=np.float32)
+        self.returns = np.zeros(self.size, dtype=np.float32)
+
+        self._pos = 0
+        self.ready = False
+
