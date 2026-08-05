@@ -412,3 +412,52 @@ initialisation while the rest of the grid has converged.
 
 ---
 
+### Stage 2 — Deep Q-Network
+
+> `dqn/` · CartPole-v1 · `python -m dqn.train --no-replay --no-target-network`
+
+**1. The problem it solves.** Q-learning where the state space is continuous, so
+a table is not merely large but *impossible*.
+
+**2. Why the previous stage is insufficient.** CartPole's state is
+$(x, \dot{x}, \theta, \dot{\theta}) \in \mathbb{R}^4$. There is no row to index.
+Discretising trades one problem for two: the bin count explodes with dimension,
+and bins do not share information — everything learned about
+$(0.10, 0.02, 0.01, 0.30)$ is invisible to the neighbouring state
+$(0.101, 0.02, 0.01, 0.30)$. The tabular representation has *no notion of
+similarity between states*, and that is what has to change.
+
+**3. The mathematical idea.** Replace the table with a parameterised function
+$Q_\theta(s,a)$ and fit it by gradient descent on the squared TD error:
+
+$$\mathcal{L}(\theta) = \mathbb{E}\Big[\big(\underbrace{r + \gamma \max_{a'} Q_\theta(s',a')}_{\text{treated as a constant}} - Q_\theta(s,a)\big)^2\Big]$$
+
+Generalisation now comes for free: one shared parameter vector describes all
+states, and similar inputs produce similar outputs by construction.
+
+**4. How training changes.** A forward pass, a loss, a backward pass, an
+optimiser step. The network emits all $|\mathcal{A}|$ values at once, so
+$\max_{a'}$ is one cheap operation. Critically, the target is `detach`ed — this
+is not an optimisation, it is the algorithm. Q-learning is a fixed-point
+iteration, not a loss minimisation; if gradients flowed into the target, the
+network could reduce the loss by dragging the target toward its prediction
+instead of the reverse.
+
+**5. Failure modes.** This is where it gets interesting — the naive version is
+*worse* than the tabular one it generalises:
+
+- **Correlated samples.** Consecutive states within an episode are nearly
+  identical. Gradient descent assumes i.i.d. samples; a stream of near-duplicates
+  gives a gradient that reflects one moment, not the task.
+- **Non-stationary data distribution.** Improving the policy changes which states
+  are visited, which changes the training distribution. The network chases its
+  own tail and **catastrophically forgets** states it no longer visits.
+- **The deadly triad.** Function approximation + bootstrapping + off-policy
+  updates. Any two are safe. All three together have no convergence guarantee,
+  and the tabular contraction argument no longer applies.
+
+**6. The experiment.** The `online` row of
+`experiments/exp2_replay_ablation.py` — see stage 3, where the comparison lives.
+
+---
+
