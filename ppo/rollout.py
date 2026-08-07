@@ -109,3 +109,10 @@ class RolloutBuffer:
         self._pos = 0
         self.ready = False
 
+    def __len__(self) -> int:
+        return self._pos
+
+    @property
+    def is_full(self) -> bool:
+        return self._pos >= self.size
+
