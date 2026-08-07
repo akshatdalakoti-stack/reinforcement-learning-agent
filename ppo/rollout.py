@@ -116,3 +116,40 @@ class RolloutBuffer:
     def is_full(self) -> bool:
         return self._pos >= self.size
 
+    def add(
+        self,
+        state: np.ndarray,
+        action: int,
+        reward: float,
+        done: bool,
+        log_prob: float,
+        value: float,
+    ) -> None:
+        if self.is_full:
+            raise RuntimeError("rollout buffer is full; call finish() and reset()")
+        i = self._pos
+        self.states[i] = state
+        self.actions[i] = action
+        self.rewards[i] = reward
+        self.dones[i] = float(done)
+        self.log_probs[i] = log_prob
+        self.values[i] = value
+        self._pos += 1
+
+    def finish(
+        self,
+        last_value: float,
+        last_done: bool,
+        gamma: float = 0.99,
+        gae_lambda: float = 0.95,
+    ) -> None:
+        """Compute advantages and returns for the collected slice."""
+        n = self._pos
+        adv, ret = compute_gae(
+            self.rewards[:n], self.values[:n], self.dones[:n],
+            last_value, last_done, gamma, gae_lambda,
+        )
+        self.advantages[:n] = adv
+        self.returns[:n] = ret
+        self.ready = True
+
