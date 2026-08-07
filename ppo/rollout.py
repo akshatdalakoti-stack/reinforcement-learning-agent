@@ -153,3 +153,30 @@ class RolloutBuffer:
         self.returns[:n] = ret
         self.ready = True
 
+    def reset(self) -> None:
+        self._pos = 0
+        self.ready = False
+
+    def minibatches(self, batch_size: int, rng: np.random.Generator):
+        """Yield shuffled minibatches covering the rollout exactly once.
+
+        Shuffling matters.  The stored transitions are consecutive in time and
+        therefore highly correlated; feeding them in order would make each
+        minibatch gradient a biased sample of one moment in one episode.  This
+        is the same concern replay addresses in DQN, handled differently
+        because PPO cannot reach outside the current rollout for data.
+        """
+        if not self.ready:
+            raise RuntimeError("call finish() before iterating minibatches")
+        n = self._pos
+        indices = rng.permutation(n)
+        for start in range(0, n, batch_size):
+            idx = indices[start:start + batch_size]
+            yield (
+                torch.as_tensor(self.states[idx], device=self.device),
+                torch.as_tensor(self.actions[idx], device=self.device),
+                torch.as_tensor(self.log_probs[idx], device=self.device),
+                torch.as_tensor(self.advantages[idx], device=self.device),
+                torch.as_tensor(self.returns[idx], device=self.device),
+                torch.as_tensor(self.values[idx], device=self.device),
+            )
