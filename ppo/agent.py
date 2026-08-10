@@ -106,3 +106,60 @@ class PPOAgent:
         ``V(s)`` may move from ``V_old(s)`` in one update.
     """
 
+    def __init__(
+        self,
+        obs_dim: int,
+        n_actions: int,
+        hidden_sizes: Sequence[int] = (64, 64),
+        lr: float = 3e-4,
+        gamma: float = 0.99,
+        gae_lambda: float = 0.95,
+        clip_epsilon: float = 0.2,
+        n_epochs: int = 10,
+        minibatch_size: int = 64,
+        rollout_size: int = 2048,
+        value_coef: float = 0.5,
+        entropy_coef: float = 0.01,
+        grad_clip: float = 0.5,
+        normalize_advantages: bool = True,
+        clip_value_loss: bool = True,
+        target_kl: float | None = 0.03,
+        anneal_lr: bool = True,
+        shared_trunk: bool = True,
+        device: torch.device | str = "cpu",
+        seed: int | None = None,
+    ) -> None:
+        self.device = torch.device(device)
+        self.obs_dim, self.n_actions = int(obs_dim), int(n_actions)
+        self.gamma = float(gamma)
+        self.gae_lambda = float(gae_lambda)
+        self.clip_epsilon = float(clip_epsilon)
+        self.n_epochs = int(n_epochs)
+        self.minibatch_size = int(minibatch_size)
+        self.rollout_size = int(rollout_size)
+        self.value_coef = float(value_coef)
+        self.entropy_coef = float(entropy_coef)
+        self.grad_clip = float(grad_clip)
+        self.normalize_advantages = bool(normalize_advantages)
+        self.clip_value_loss = bool(clip_value_loss)
+        self.target_kl = target_kl
+        self.anneal_lr = bool(anneal_lr)
+        self.initial_lr = float(lr)
+
+        if seed is not None:
+            torch.manual_seed(seed)
+        self.policy_value_net = ActorCriticNetwork(
+            obs_dim, n_actions, hidden_sizes, shared_trunk=shared_trunk
+        ).to(self.device)
+        # eps=1e-5 rather than torch's 1e-8 default: the standard PPO setting,
+        # it stops Adam taking enormous steps when gradients are near zero,
+        # which is common once most of a batch is clipped.
+        self.optimizer = torch.optim.Adam(
+            self.policy_value_net.parameters(), lr=self.initial_lr, eps=1e-5
+        )
+        self.buffer = RolloutBuffer(rollout_size, obs_dim, device=self.device)
+
+        self.rng = np.random.default_rng(seed)
+        self.env_steps = 0
+        self.updates = 0
+
