@@ -177,3 +177,17 @@ class PPOAgent:
         action, log_prob, value = self.policy_value_net.act(obs)
         return int(action.item()), float(log_prob.item()), float(value.item())
 
+    @torch.no_grad()
+    def value_of(self, state: np.ndarray) -> float:
+        obs = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        _, value = self.policy_value_net(obs)
+        return float(value.item())
+
+    # --------------------------------------------------------------- rollouts
+    def store(
+        self, state: np.ndarray, action: int, reward: float,
+        done: bool, log_prob: float, value: float,
+    ) -> None:
+        self.buffer.add(state, action, reward, done, log_prob, value)
+        self.env_steps += 1
+
