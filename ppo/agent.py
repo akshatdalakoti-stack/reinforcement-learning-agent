@@ -163,3 +163,10 @@ class PPOAgent:
         self.env_steps = 0
         self.updates = 0
 
+    # ------------------------------------------------------------------ acting
+    @torch.no_grad()
+    def act(self, state: np.ndarray, greedy: bool = False) -> int:
+        obs = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        action, _, _ = self.policy_value_net.act(obs, greedy=greedy)
+        return int(action.item())
+
