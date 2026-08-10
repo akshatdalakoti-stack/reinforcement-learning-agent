@@ -461,3 +461,97 @@ instead of the reverse.
 
 ---
 
+### Stage 3 — Experience replay
+
+> `dqn/replay_buffer.py` · `python -m dqn.train --no-target-network`
+
+**1. The problem it solves.** The correlated, non-stationary data stream of
+stage 2.
+
+**2. Why stage 2 is insufficient.** Online DQN trains on transitions in the order
+they occur. Each gradient step overfits the current moment, and the next step
+partially undoes it. Data is also used exactly once and thrown away, which is
+wasteful when environment interaction is the expensive resource.
+
+**3. The mathematical idea.** Store transitions $(s,a,r,s',d)$ in a circular
+buffer and sample minibatches **uniformly at random**. A minibatch then mixes
+many different episodes and many different past policies, restoring something
+much closer to the i.i.d. assumption gradient descent needs.
+
+The legality argument is the important part, and it is one line: **Q-learning is
+off-policy.** Its target $r + \gamma\max_{a'}Q(s',a')$ never refers to the policy
+that chose $a$. A transition collected 10,000 steps ago is still a valid sample
+of the environment's dynamics. This is precisely why stage 5 cannot do the same.
+
+**4. How training changes.** Acting and learning decouple. The agent may take one
+environment step and one gradient step, or one step and four gradient steps, or
+collect for a while and then train — these are now independent knobs
+(`--train-freq`).
+
+**5. Failure modes.**
+- **Buffer size is a real hyperparameter.** Too small and the samples are still
+  correlated; too large and the agent trains on transitions from policies so old
+  they are no longer informative.
+- **Uniform sampling is not obviously right.** Rare, high-TD-error transitions
+  are drawn as often as common boring ones (the motivation for prioritised
+  replay, not implemented here).
+- **It does not fix the moving target — and that turns out to dominate.** Replay
+  decorrelates the *inputs*; the regression *target* is still built from the
+  network being updated. On CartPole the experiment below shows this is not a
+  minor residual problem: with no target network, adding replay changes the
+  final reward by **−0.0**, and makes the underlying divergence *worse*. Replay
+  only pays off once stage 4 is in place. If you are reading this progression
+  expecting each idea to add its own increment, this is the point where that
+  expectation breaks.
+
+**6. The experiment.** `experiments/exp2_replay_ablation.py` — three variants,
+identical in every other respect, 3 seeds each. The middle variant is what
+isolates replay; comparing `online` against the full agent would confound two
+ideas.
+
+Three seeds each, 120,000 environment steps, identical hyperparameters, judged
+on the best periodic **greedy** evaluation:
+
+| | no target network | target network |
+|---|---|---|
+| **no replay** | (a) 9.7 ± 0.1 · peak Q **8,121,814** | (c) 12.4 ± 0.9 · peak Q 39.0 |
+| **replay** | (b) 9.7 ± 0.1 · peak Q **18,707,648** | (d) **456.7 ± 61.3** · peak Q 69.3 |
+
+Main effects on best greedy reward:
+
+| change | effect |
+|---|---:|
+| add a target network, *without* replay | +2.7 |
+| add replay, *without* a target network | −0.0 |
+| add a target network, *with* replay | **+446.9** |
+| add replay, *with* a target network | **+444.3** |
+
+**This is almost pure interaction.** Neither idea does anything on its own; the
+two together are worth ~450 reward. That is a more interesting result than the
+usual "both help a little", and the mechanism is legible in the peak-Q column:
+
+- **Replay without a target network makes things actively worse** (peak Q
+  18.7M vs 8.1M). Replay is doing its job — supplying many decorrelated,
+  informative gradient steps — and every one of those steps feeds a
+  self-referential target. Better data closes the divergence loop *faster*.
+- **A target network without replay stops the divergence** (peak Q 39.0, a
+  sane number) **but cannot learn.** Each gradient step sees a single
+  transition, correlated with the last, so the network fits the current moment
+  and forgets it immediately. Stable, and stuck.
+- **Together**, the target supplies a stationary objective and replay supplies
+  decorrelated data to fit it with — the two conditions ordinary supervised
+  learning needs. Only then does the agent solve the task, reaching the
+  threshold in **8,363 ± 2,363** environment steps.
+
+So the honest version of the stage 3 → 4 story is not "replay helps, then the
+target network helps more". It is: **replay and the target network fix different
+halves of the same broken assumption, and deep Q-learning needs both.** Replay
+makes the inputs look i.i.d.; the target network makes the labels stationary.
+Supervised learning quietly assumes both, and stage 2 has neither.
+
+![Factorial bars](results/plots/exp2_factorial_bars.png)
+
+![Replay ablation](results/plots/exp2_replay_ablation.png)
+
+---
+
