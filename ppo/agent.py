@@ -170,3 +170,10 @@ class PPOAgent:
         action, _, _ = self.policy_value_net.act(obs, greedy=greedy)
         return int(action.item())
 
+    @torch.no_grad()
+    def act_with_value(self, state: np.ndarray) -> tuple[int, float, float]:
+        """Sample an action, returning ``(action, log_prob_old, value)``."""
+        obs = torch.as_tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        action, log_prob, value = self.policy_value_net.act(obs)
+        return int(action.item()), float(log_prob.item()), float(value.item())
+
