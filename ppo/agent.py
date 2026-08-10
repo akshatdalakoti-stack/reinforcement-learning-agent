@@ -191,3 +191,7 @@ class PPOAgent:
         self.buffer.add(state, action, reward, done, log_prob, value)
         self.env_steps += 1
 
+    @property
+    def rollout_full(self) -> bool:
+        return self.buffer.is_full
+
