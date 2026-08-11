@@ -195,3 +195,17 @@ class PPOAgent:
     def rollout_full(self) -> bool:
         return self.buffer.is_full
 
+    def set_lr(self, progress: float) -> float:
+        """Linearly anneal the learning rate from ``initial_lr`` to 0.
+
+        Standard in PPO implementations and worth more than it looks: large
+        steps are useful while the policy is bad, and actively harmful once it
+        is near-optimal, where they mostly add noise to an already-good policy.
+        """
+        if not self.anneal_lr:
+            return self.initial_lr
+        lr = self.initial_lr * max(0.0, 1.0 - progress)
+        for group in self.optimizer.param_groups:
+            group["lr"] = lr
+        return lr
+
