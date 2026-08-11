@@ -306,3 +306,16 @@ class PPOAgent:
             "early_stopped": float(stop_early),
         }
 
+    # -------------------------------------------------------------- checkpoint
+    def config(self) -> dict:
+        return {
+            "obs_dim": self.obs_dim,
+            "n_actions": self.n_actions,
+            "gamma": self.gamma,
+            "gae_lambda": self.gae_lambda,
+            "clip_epsilon": self.clip_epsilon,
+            "n_epochs": self.n_epochs,
+            "hidden_sizes": self.policy_value_net.hidden_sizes,
+            "shared_trunk": self.policy_value_net.shared_trunk,
+        }
+
