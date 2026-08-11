@@ -209,3 +209,100 @@ class PPOAgent:
             group["lr"] = lr
         return lr
 
+    # ---------------------------------------------------------------- learning
+    def update(self, last_state: np.ndarray, last_done: bool) -> dict[str, float]:
+        """Run ``n_epochs`` of minibatch SGD on the clipped objective."""
+        self.buffer.finish(
+            last_value=self.value_of(last_state),
+            last_done=last_done,
+            gamma=self.gamma,
+            gae_lambda=self.gae_lambda,
+        )
+
+        losses, policy_losses, value_losses = [], [], []
+        entropies, clip_fractions, kls, ratios = [], [], [], []
+        epochs_run = 0
+        stop_early = False
+
+        for _ in range(self.n_epochs):
+            epochs_run += 1
+            for states, actions, old_log_probs, advantages, returns, old_values in \
+                    self.buffer.minibatches(self.minibatch_size, self.rng):
+
+                # Normalising per minibatch (not per rollout) is what the
+                # reference implementation does: it keeps the policy step size
+                # comparable regardless of the reward scale of this particular
+                # batch of states.
+                if self.normalize_advantages and advantages.numel() > 1:
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+                new_log_probs, values, entropy = self.policy_value_net.evaluate_actions(
+                    states, actions
+                )
+
+                # r = pi_new/pi_old, computed in log space for stability.
+                log_ratio = new_log_probs - old_log_probs
+                ratio = log_ratio.exp()
+
+                unclipped = ratio * advantages
+                clipped = torch.clamp(
+                    ratio, 1.0 - self.clip_epsilon, 1.0 + self.clip_epsilon
+                ) * advantages
+                # Negated because we minimise; the min() makes it a pessimistic bound.
+                policy_loss = -torch.min(unclipped, clipped).mean()
+
+                if self.clip_value_loss:
+                    v_clipped = old_values + torch.clamp(
+                        values - old_values, -self.clip_epsilon, self.clip_epsilon
+                    )
+                    value_loss = 0.5 * torch.max(
+                        (values - returns) ** 2, (v_clipped - returns) ** 2
+                    ).mean()
+                else:
+                    value_loss = 0.5 * ((values - returns) ** 2).mean()
+
+                entropy_bonus = entropy.mean()
+                loss = (
+                    policy_loss
+                    + self.value_coef * value_loss
+                    - self.entropy_coef * entropy_bonus
+                )
+
+                self.optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.policy_value_net.parameters(), self.grad_clip)
+                self.optimizer.step()
+
+                with torch.no_grad():
+                    # Schulman's low-variance, always-positive KL estimator.
+                    approx_kl = ((ratio - 1.0) - log_ratio).mean()
+                    clip_fraction = (
+                        (ratio - 1.0).abs() > self.clip_epsilon
+                    ).float().mean()
+
+                losses.append(float(loss.item()))
+                policy_losses.append(float(policy_loss.item()))
+                value_losses.append(float(value_loss.item()))
+                entropies.append(float(entropy_bonus.item()))
+                clip_fractions.append(float(clip_fraction.item()))
+                kls.append(float(approx_kl.item()))
+                ratios.append(float(ratio.mean().item()))
+
+            if self.target_kl is not None and kls and np.mean(kls[-8:]) > self.target_kl:
+                stop_early = True
+                break
+
+        self.buffer.reset()
+        self.updates += 1
+        return {
+            "loss": float(np.mean(losses)),
+            "policy_loss": float(np.mean(policy_losses)),
+            "value_loss": float(np.mean(value_losses)),
+            "entropy": float(np.mean(entropies)),
+            "clip_fraction": float(np.mean(clip_fractions)),
+            "approx_kl": float(np.mean(kls)),
+            "mean_ratio": float(np.mean(ratios)),
+            "epochs_run": float(epochs_run),
+            "early_stopped": float(stop_early),
+        }
+
