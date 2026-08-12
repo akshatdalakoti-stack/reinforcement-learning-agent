@@ -26,3 +26,6 @@ from evaluation.plotting import plot_learning_curve
 from evaluation.utils import LOG_DIR, PLOT_DIR, get_device, resolve_dir, resolve_path, set_seed
 from ppo.agent import PPOAgent
 
+FALLBACK_ENV = "CartPole-v1"
+
+
