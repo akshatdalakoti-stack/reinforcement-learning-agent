@@ -555,3 +555,104 @@ Supervised learning quietly assumes both, and stage 2 has neither.
 
 ---
 
+### Stage 4 — Target networks
+
+> `dqn/agent.py` · `python -m dqn.train`
+
+**1. The problem it solves.** The regression target moving in lockstep with the
+estimator.
+
+**2. Why stage 3 is insufficient.** Replay fixed the input distribution but not
+the target. Consider what one gradient step does:
+
+$$\mathcal{L} = \big(Q_\theta(s,a) - [r + \gamma \max_{a'} Q_\theta(s',a')]\big)^2$$
+
+$s$ and $s'$ are neighbouring states, so the network cannot raise $Q_\theta(s,a)$
+without also raising $Q_\theta(s',a')$ — which raises the target — which raises
+$Q_\theta(s,a)$ again. The estimate and the thing it is chasing are the same
+function. There is no stationary target to converge to, and the value estimates
+can run away.
+
+**3. The mathematical idea.** Keep a frozen copy $\theta^-$, synchronised every
+$k$ gradient steps, and build the target from it:
+
+$$y = r + \gamma \max_{a'} Q_{\theta^-}(s',a')$$
+
+Between syncs, $y$ is a *constant*. The problem becomes a sequence of ordinary
+supervised regressions against a stationary target — exactly the setting
+gradient descent has guarantees for. The bootstrapping is still there; it has
+just been made *piecewise stationary*.
+
+**4. How training changes.** One extra network, and one extra hyperparameter: the
+sync period $k$. `--tau > 0` switches to Polyak averaging
+$\theta^- \leftarrow \tau\theta + (1-\tau)\theta^-$ every step, which is the same
+idea applied smoothly instead of in jumps.
+
+**5. Failure modes.**
+- **$k$ too small** approaches having no target network at all.
+- **$k$ too large** makes the targets stale, so value information propagates
+  backwards through the state space very slowly.
+- **Overestimation persists.** $\mathbb{E}[\max_a \hat{Q}] \ge \max_a \mathbb{E}[\hat{Q}]$
+  — the max of noisy estimates is biased *upward*, and the target network does
+  nothing about that. Watch `mean_q` climb above any achievable return. The fix
+  is Double DQN, available here as `--double-dqn`:
+  $y = r + \gamma Q_{\theta^-}(s', \arg\max_{a'} Q_\theta(s',a'))$, which
+  decouples selection from evaluation.
+
+**6. The experiment.** `experiments/exp3_target_network_frequency.py` sweeps $k$
+against a no-target-network control.
+
+Three seeds per setting, 100,000 environment steps, replay on throughout:
+
+| sync period $k$ | best greedy reward | steps to greedy ≥195 | peak mean predicted Q |
+|---|---|---:|---:|
+| *no target network* | 9.7 ± 0.1 | never | **18,707,648** |
+| 1 | 9.7 ± 0.1 | never | **18,707,648** |
+| 50 | 411.3 ± 125.5 | 23,440 | 165.2 |
+| 250 | 403.5 ± 71.4 | **8,363** | 62.7 |
+| 1,000 | **437.1 ± 89.0** | 36,750 | 23.5 |
+| 5,000 | 9.7 ± 0.1 | never | **2.4** |
+
+**First, a sanity check that the implementation is honest.** $k = 1$ reproduces
+the no-target-network control *to the digit* — same reward, same 18,707,648 peak
+Q, same standard deviation. It should: syncing after every gradient step means
+the target network is always an exact copy of the online network, which is
+definitionally the same algorithm. Any implementation where those two rows
+differ has a bug in it.
+
+**Both extremes fail, and the peak-Q column says they fail for opposite
+reasons.** Read it top to bottom: 18.7M → 165 → 62.7 → 23.5 → 2.4. The sync
+period is, quite directly, a speed limit on how fast value estimates may grow.
+
+- At $k = 1$ there is no speed limit, and the estimates run away — the deadly
+  triad, unimpeded.
+- At $k = 5{,}000$ the limit is so tight that after 100,000 steps the network
+  still values states at 2.4, against a true maximum of ~99. It has not
+  diverged; it simply has not been allowed to learn. The targets are so stale
+  that reward information cannot propagate backwards through the state space.
+- In between — anywhere from 50 to 1,000 — it works, and the differences among
+  those three rows are inside the seed noise at $n=3$.
+
+That is the trade-off stated concretely: **too fast is divergence, too slow is
+paralysis, and the useful range spans more than an order of magnitude.** The
+project's default of 250 sits in that range and is the fastest to threshold
+here, but 50 and 1,000 would have been defensible choices too.
+
+![Target frequency trade-off](results/plots/exp3_target_frequency_tradeoff.png)
+
+![Target frequency trade-off](results/plots/exp3_target_frequency_tradeoff.png)
+
+At this point the value-based line is complete, and it solves CartPole:
+
+| | env steps | training time | greedy evaluation | final mean Q |
+|---|---:|---:|---|---:|
+| DQN + replay + target | 200,036 | 193 s | **500.0 ± 0.0** (solved) | 91.3 |
+
+The mean predicted Q settling at 91.3, just under the theoretical maximum of
+99.3, is the sign that the value function is calibrated rather than merely
+useful. Compare the millions reached without a target network.
+
+![DQN learning curve](results/plots/dqn_cartpole_curve.png)
+
+---
+
