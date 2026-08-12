@@ -319,3 +319,35 @@ class PPOAgent:
             "shared_trunk": self.policy_value_net.shared_trunk,
         }
 
+    def save(self, path: str) -> str:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        torch.save(
+            {
+                "policy_value_net": self.policy_value_net.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+                "env_steps": self.env_steps,
+                "config": json.dumps(self.config()),
+            },
+            path,
+        )
+        return path
+
+    @classmethod
+    def load(cls, path: str, device: torch.device | str = "cpu", **overrides):
+        ckpt = torch.load(path, map_location=device, weights_only=False)
+        cfg = json.loads(ckpt["config"])
+        agent = cls(
+            obs_dim=cfg["obs_dim"],
+            n_actions=cfg["n_actions"],
+            hidden_sizes=cfg["hidden_sizes"],
+            gamma=cfg["gamma"],
+            gae_lambda=cfg["gae_lambda"],
+            clip_epsilon=cfg["clip_epsilon"],
+            n_epochs=cfg["n_epochs"],
+            shared_trunk=cfg.get("shared_trunk", True),
+            device=device,
+            **overrides,
+        )
+        agent.policy_value_net.load_state_dict(ckpt["policy_value_net"])
+        agent.env_steps = ckpt.get("env_steps", 0)
+        return agent
