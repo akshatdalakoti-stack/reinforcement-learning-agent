@@ -206,3 +206,28 @@ def test_dqn_target_is_detached():
               for p in agent.online_net.parameters()))
 
 
+def test_dqn_target_sync():
+    """The target must be copied exactly on schedule, and not before."""
+    from dqn.agent import DQNAgent
+
+    agent = DQNAgent(obs_dim=4, n_actions=2, buffer_size=200, batch_size=8,
+                     learning_starts=0, train_freq=1, target_update_freq=5, seed=0)
+    for i in range(100):
+        agent.observe(np.random.randn(4).astype(np.float32), i % 2, 1.0,
+                      np.random.randn(4).astype(np.float32), False)
+    for _ in range(4):
+        agent.train_step()
+    check("dqn: target lags the online net between syncs",
+          any(not torch.equal(t, o) for t, o in
+              zip(agent.target_net.parameters(), agent.online_net.parameters())))
+    agent.train_step()  # the 5th gradient step triggers the sync
+    check("dqn: target matches the online net right after a sync",
+          all(torch.equal(t, o) for t, o in
+              zip(agent.target_net.parameters(), agent.online_net.parameters())))
+    check("dqn: sync counter incremented", agent.target_syncs == 1)
+
+
+def test_ppo_clipping_gradients():
+    """The clip must kill the gradient outside the region -- but the min() must
+    keep it alive when the policy needs to come back."""
+
