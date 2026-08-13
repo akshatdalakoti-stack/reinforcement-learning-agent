@@ -193,3 +193,58 @@ def train(args) -> tuple[PPOAgent, MetricsRecorder, object, str, object]:
     return agent, recorder, env, env_id, evaluator
 
 
+def main(argv=None):
+    args = parse_args(argv)
+    agent, recorder, env, env_id, evaluator = train(args)
+
+    eval_env = make_env(env_id, seed=args.seed + 99_999)
+    result = evaluate_agent(agent, eval_env, episodes=args.eval_episodes, seed=100_000)
+    threshold = eval_env.spec.reward_threshold if eval_env.spec else None
+
+    summary = recorder.summary(args.window)
+    clip_fracs = recorder.series("clip_fraction")
+    print("\n--- results -------------------------------------------------")
+    print(f"  environment              {env_id}")
+    print(f"  episodes                 {summary['episodes']}")
+    print(f"  environment steps        {summary['env_steps']}")
+    print(f"  PPO updates              {agent.updates} "
+          f"({agent.updates * args.n_epochs} epochs of minibatch SGD)")
+    print(f"  training time            {summary['training_time_sec']} s "
+          f"({summary['steps_per_second']} env-steps/s)")
+    print(f"  best episode reward      {summary['best_episode_reward']:.1f}")
+    print(f"  final performance (train){summary['final_performance_train']:8.1f} "
+          f"(last {args.window} episodes)")
+    if np.isfinite(clip_fracs).any():
+        print(f"  mean clip fraction       {np.nanmean(clip_fracs):.3f} "
+              "(share of samples hitting the trust-region boundary)")
+    print("  greedy evaluation:")
+    print(format_report(args.run_name, result, threshold))
+
+    if not args.no_save:
+        path = agent.save(resolve_path("checkpoints", f"{args.run_name}.pt"))
+        print(f"  checkpoint               {path}")
+    # Persist the greedy evaluation alongside the per-episode log, so that
+    # evaluation/report.py can rebuild the summary table without retraining.
+    recorder.config["final_eval"] = {
+        "mean_reward": result["mean_reward"],
+        "std_reward": result["std_reward"],
+        "episodes": result["episodes"],
+        "threshold": threshold,
+        "solved": (threshold is not None and result["mean_reward"] >= threshold),
+    }
+    recorder.save(resolve_dir(*LOG_DIR))
+
+    if not args.no_plots:
+        plot_learning_curve(
+            recorder,
+            resolve_path(*PLOT_DIR, f"{args.run_name}_curve.png"),
+            window=args.window,
+            title=f"PPO on {env_id} (clip={args.clip_epsilon}, epochs={args.n_epochs})",
+        )
+
+    env.close()
+    eval_env.close()
+    evaluator.env.close()
+    return agent, recorder, result
+
+
