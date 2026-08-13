@@ -77,3 +77,28 @@ def resolve_env_id(requested: str, quiet: bool = False) -> str:
     return FALLBACK_ENV
 
 
+def build_agent(args, spec, device) -> PPOAgent:
+    return PPOAgent(
+        obs_dim=spec.obs_dim,
+        n_actions=spec.n_actions,
+        hidden_sizes=args.hidden,
+        lr=args.lr,
+        gamma=args.gamma,
+        gae_lambda=args.gae_lambda,
+        clip_epsilon=args.clip_epsilon,
+        n_epochs=args.n_epochs,
+        minibatch_size=args.minibatch_size,
+        rollout_size=args.rollout_size,
+        value_coef=args.value_coef,
+        entropy_coef=args.entropy_coef,
+        grad_clip=args.grad_clip,
+        normalize_advantages=not args.no_advantage_norm,
+        clip_value_loss=not args.no_value_clip,
+        target_kl=args.target_kl,
+        anneal_lr=not args.no_lr_anneal,
+        shared_trunk=not args.separate_networks,
+        device=device,
+        seed=args.seed,
+    )
+
+
