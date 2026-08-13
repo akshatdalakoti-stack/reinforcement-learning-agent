@@ -656,3 +656,110 @@ useful. Compare the millions reached without a target network.
 
 ---
 
+### Stage 5 — REINFORCE
+
+> `reinforce/` · `python -m reinforce.train --gradient-variance 40`
+
+**1. The problem it solves.** Optimising the policy *directly*, rather than
+inferring it from values.
+
+**2. Why stages 1–4 are insufficient.** Even a working DQN has structural
+limits, all traceable to deriving $\pi$ from $Q$ by $\arg\max$:
+
+- The policy is a **discontinuous** function of $\theta$. An arbitrarily small
+  weight change can flip the argmax and change behaviour completely.
+- The policy is **deterministic**, so exploration must be bolted on from outside
+  ($\varepsilon$-greedy) and cannot be shaped by the objective.
+- **Continuous actions are intractable**: $\arg\max_a Q(s,a)$ becomes its own
+  optimisation problem at every step.
+- When the optimal policy is genuinely **stochastic**, no $\arg\max$ can express it.
+
+**3. The mathematical idea.** Parameterise $\pi_\theta(a|s)$ and ascend
+$J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta}[R(\tau)]$ directly. The trajectory
+distribution depends on $\theta$, so the gradient cannot pass inside the
+expectation — until the **likelihood-ratio trick**,
+$\nabla p = p \nabla \log p$:
+
+$$\nabla_\theta J = \mathbb{E}_\tau\!\left[\sum_t \nabla_\theta \log \pi_\theta(a_t|s_t)\, G_t\right]$$
+
+The single most important consequence: **the transition probabilities cancel**.
+$\log p_\theta(\tau)$ contains $\sum_t \log P(s_{t+1}|s_t,a_t)$, which does not
+depend on $\theta$ and differentiates to zero. That is why policy gradients work
+without a model.
+
+Causality lets us use the reward-to-go $G_t$ rather than the full-trajectory
+return: an action at time $t$ cannot influence earlier rewards, so including them
+only adds variance.
+
+**4. How training changes.** Completely. There is no value function and no
+bootstrapping. The agent collects a whole trajectory, computes returns backwards,
+and takes **one** gradient step on
+
+$$\mathcal{L}(\theta) = -\frac{1}{T}\sum_t \log \pi_\theta(a_t|s_t)\, A_t$$
+
+which is not a loss but a *surrogate* whose gradient equals the negated policy
+gradient. $A_t$ is detached — it is a weight on the log-probability, not
+something to differentiate through. The data is then discarded, because it is
+on-policy: the estimator is only valid for the policy that generated it.
+
+**5. Failure modes.**
+- **Variance.** $G_t$ sums every reward and every random transition to the end of
+  the episode. Its variance compounds with the horizon.
+- **No sense of expectation.** On CartPole every reward is $+1$, so a 200-step
+  episode reinforces *every* action in it equally — including the one that
+  eventually dropped the pole.
+- **Sample inefficiency.** One gradient step per episode, then the data is gone.
+- **Premature convergence.** Whatever gets sampled gets reinforced, which makes
+  it more likely to be sampled. The entropy bonus opposes this.
+
+Two variance reductions are implemented. The **baseline lemma** is the important
+one: for any $b(s)$ that does not depend on the action, subtracting it from the
+weight leaves the gradient's expectation unchanged. Writing the expectation over
+actions out in full:
+
+$$\mathbb{E}_{a \sim \pi_\theta}\big[b(s)\,\nabla_\theta \log \pi_\theta(a|s)\big]
+= b(s) \sum_a \pi_\theta(a|s)\, \nabla_\theta \log \pi_\theta(a|s)
+= b(s) \sum_a \nabla_\theta \pi_\theta(a|s)$$
+
+$$= b(s)\, \nabla_\theta \sum_a \pi_\theta(a|s) = b(s)\, \nabla_\theta 1 = 0$$
+
+The second equality is the log-derivative trick run backwards
+($\pi \nabla \log \pi = \nabla \pi$), and the last step is just the fact that a
+probability distribution sums to 1 regardless of $\theta$. So subtracting a
+baseline changes the variance but **not the expectation** — we get to choose
+$b(s)$ freely to minimise noise, and stage 6 chooses the best one available.
+`--baseline mean` uses the batch mean; `--baseline norm` also divides by the
+batch std (biased, but very effective).
+
+**6. The experiment.** `--gradient-variance N` freezes the parameters and
+estimates the gradient $N$ times from $N$ independent rollouts. Every estimate
+targets the *same* quantity $\nabla_\theta J$, so any disagreement between them
+is pure estimator variance, with learning dynamics factored out. Measured at the
+**end** of the canonical run (40 single-episode estimates at the trained
+policy):
+
+| measure | value | what 'no variance' would look like |
+|---|---|---|
+| mean pairwise cosine similarity | **+0.003** | 1.000 |
+| $\Vert\text{mean grad}\Vert / \text{mean}\Vert\text{grad}\Vert$ | **0.118** | 1.000 |
+
+Two rollouts from the *same* policy produce gradient estimates that are
+essentially **orthogonal**. REINFORCE works at all only because those errors
+average out over many updates — which is exactly why it needs so many. (Stage 6
+repeats this probe at an *untrained* policy, where the number is +0.006, and
+shows what the baseline does to it.)
+
+The practical cost, on the canonical run:
+
+| | env steps | episodes | training time | greedy evaluation |
+|---|---:|---:|---:|---|
+| REINFORCE (normalised baseline) | 200,130 | 508 | 271 s | 459.4 ± **56.1** |
+
+Note the standard deviation. DQN and the next two stages all reach $500.0 \pm 0.0$;
+REINFORCE lands near the top but *inconsistently*, which is the variance above
+showing up in behaviour.
+
+![REINFORCE learning curve](results/plots/reinforce_cartpole_curve.png)
+
+---
+
