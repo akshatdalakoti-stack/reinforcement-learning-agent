@@ -102,3 +102,94 @@ def build_agent(args, spec, device) -> PPOAgent:
     )
 
 
+def train(args) -> tuple[PPOAgent, MetricsRecorder, object, str, object]:
+    set_seed(args.seed)
+    device = get_device(args.device)
+    env_id = resolve_env_id(args.env, args.quiet)
+
+    env = make_env(env_id, seed=args.seed)
+    spec = env_spec(env)
+    agent = build_agent(args, spec, device)
+    recorder = MetricsRecorder(run_name=args.run_name, config={**vars(args), "env_id": env_id})
+    evaluator = PeriodicEvaluator(
+        make_env(env_id, seed=args.seed + 424_242),
+        every=args.eval_every, episodes=args.eval_rollouts,
+    )
+    last_eval: float | None = None
+
+    if not args.quiet:
+        print(f"[ppo] {env_id}  rollout={args.rollout_size}  epochs={args.n_epochs}  "
+              f"clip={args.clip_epsilon}  device={device}  seed={args.seed}")
+
+    state, _ = env.reset(seed=args.seed)
+    ep_reward, ep_len, episode = 0.0, 0, 0
+    last_stats: dict[str, float] = {}
+    # The episode is no longer the update boundary, so an episode that ends
+    # mid-rollout is logged as it finishes, using the most recent update stats.
+
+    # The true successor of the last stored transition, and whether it was
+    # terminal.  These must be tracked separately from `state`: when a rollout
+    # boundary happens to land exactly on an episode end, `state` has already
+    # been reset to a *new* episode's first observation, and bootstrapping
+    # V(s) from that would splice two unrelated episodes together.
+    boundary_state, boundary_done = state, False
+
+    while agent.env_steps < args.total_steps:
+        # ---- collect a fixed-size rollout, crossing episode boundaries ------
+        while not agent.rollout_full:
+            action, log_prob, value = agent.act_with_value(state)
+            next_state, reward, terminated, truncated, _ = env.step(action)
+
+            # `terminated` only: truncation must not cut the bootstrap chain,
+            # or the agent learns that surviving to the time limit is worthless.
+            agent.store(state, action, float(reward), terminated, log_prob, value)
+            boundary_state, boundary_done = next_state, terminated
+
+            state = next_state
+            ep_reward += float(reward)
+            ep_len += 1
+
+            if terminated or truncated:
+                recorder.record_episode(
+                    episode=episode,
+                    reward=ep_reward,
+                    length=ep_len,
+                    env_steps=agent.env_steps,
+                    loss=last_stats.get("loss"),
+                    entropy=last_stats.get("entropy"),
+                    value_loss=last_stats.get("value_loss", float("nan")),
+                    clip_fraction=last_stats.get("clip_fraction", float("nan")),
+                    approx_kl=last_stats.get("approx_kl", float("nan")),
+                    **({} if last_eval is None else {"eval_reward": last_eval}),
+                )
+                last_eval = None
+                episode += 1
+                ep_reward, ep_len = 0.0, 0
+                state, _ = env.reset()
+
+        # ---- optimise it several times --------------------------------------
+        progress = agent.env_steps / max(1, args.total_steps)
+        lr = agent.set_lr(progress)
+        # Usually the rollout was cut by the size limit rather than by the
+        # environment, so `boundary_done` is False and GAE bootstraps through
+        # the cut with V(boundary_state) -- which is the whole point of letting
+        # rollouts cross episode boundaries. When the cut *does* coincide with a
+        # real termination, `boundary_done` is True and the bootstrap is zeroed.
+        last_stats = agent.update(last_state=boundary_state, last_done=boundary_done)
+        # Evaluate between rollouts: the greedy policy is what we actually ship,
+        # and it is not what the training reward above measures.
+        last_eval = evaluator.maybe_evaluate(agent, agent.env_steps)
+
+        if not args.quiet and agent.updates % 10 == 0:
+            avg = recorder.rewards[-args.window:].mean() if recorder.episodes else float("nan")
+            print(
+                f"  upd {agent.updates:>4}  steps={agent.env_steps:>7}  "
+                f"avg{args.window}={avg:8.1f}  ent={last_stats['entropy']:.3f}  "
+                f"clip_frac={last_stats['clip_fraction']:.3f}  "
+                f"kl={last_stats['approx_kl']:.4f}  v_loss={last_stats['value_loss']:8.2f}  "
+                f"lr={lr:.2e}"
+            )
+
+    return agent, recorder, env, env_id, evaluator
+
+
