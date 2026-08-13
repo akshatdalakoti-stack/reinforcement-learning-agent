@@ -68,3 +68,12 @@ def parse_args(argv=None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def resolve_env_id(requested: str, quiet: bool = False) -> str:
+    if env_available(requested):
+        return requested
+    if not quiet:
+        print(f"  ! {requested} is unavailable (Box2D missing?); "
+              f"falling back to {FALLBACK_ENV}")
+    return FALLBACK_ENV
+
+
