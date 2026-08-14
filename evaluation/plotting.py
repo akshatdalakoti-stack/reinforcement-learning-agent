@@ -101,3 +101,33 @@ def plot_comparison(
     return save_figure(fig, path)
 
 
+def plot_variance_bands(
+    curves: dict[str, list[np.ndarray]],
+    path: str,
+    title: str,
+    window: int = 25,
+    ylabel: str = "Episode reward",
+) -> str:
+    """Mean +/- 1 std across seeds -- how we visualise gradient variance.
+
+    ``curves[label]`` is a list of per-seed reward arrays.
+    """
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for i, (label, seed_runs) in enumerate(curves.items()):
+        colour = PALETTE[i % len(PALETTE)]
+        n = min(len(r) for r in seed_runs)
+        stack = np.stack([moving_average(r[:n], window) for r in seed_runs])
+        mean, std = stack.mean(axis=0), stack.std(axis=0)
+        x = np.arange(n)
+        # The seed count belongs in the title, not on every label -- appending it
+        # here turns "Actor-Critic (n=32)" into "Actor-Critic (n=32) (n=4)".
+        ax.plot(x, mean, color=colour, linewidth=2.0, label=label)
+        ax.fill_between(x, mean - std, mean + std, color=colour, alpha=0.18)
+    ax.set_xlabel("Episode")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(alpha=0.25)
+    ax.legend(loc="best")
+    return save_figure(fig, path)
+
+
