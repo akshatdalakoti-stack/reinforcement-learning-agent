@@ -763,3 +763,112 @@ showing up in behaviour.
 
 ---
 
+### Stage 6 — Actor-Critic
+
+> `actor_critic/` · `python -m actor_critic.train`
+
+**1. The problem it solves.** REINFORCE's variance, and its inability to learn
+before an episode ends.
+
+**2. Why stage 5 is insufficient.** Quantified above: cosine similarity +0.003.
+The estimator is unbiased but so noisy that most of each update is cancellation.
+And $G_t$ is undefined until the episode terminates, so on a task with
+1000-step episodes REINFORCE gets one update per 1000 steps.
+
+**3. The mathematical idea.** Replace the Monte-Carlo return with the
+**advantage**, estimated using a learned value function:
+
+$$A^\pi(s,a) = Q^\pi(s,a) - V^\pi(s)$$
+
+"How much better was this action than this state was worth anyway?" By the
+baseline lemma, subtracting $V(s)$ leaves the gradient unbiased while recentring
+the weights around zero: better-than-expected actions get positive weight,
+worse-than-expected ones negative, and a merely average action in a great state
+gets $\approx 0$ instead of a large positive push.
+
+We never learn $Q$ directly. The advantage comes from sampled rewards plus the
+critic:
+
+$$A_t = \underbrace{r_t + \gamma V(s_{t+1}) - V(s_t)}_{n=1,\ \text{the TD error } \delta_t} \qquad A_t = \sum_{k=0}^{n-1}\gamma^k r_{t+k} + \gamma^n V(s_{t+n}) - V(s_t)$$
+
+$n$ is the bias/variance dial: $n=1$ is minimum variance and maximum bias (it
+inherits every error in $V$); $n=\infty$ *is* REINFORCE. Everything useful is in
+between. This is the same trade-off from Part I, now exposed as a hyperparameter.
+
+**4. How training changes.** Two networks — an **actor** emitting $\pi(a|s)$ and
+a **critic** emitting $V(s)$ — with separate optimisers. The actor is updated
+using the advantage as a weight; the critic regresses onto the $n$-step returns.
+Because the advantage needs only $n$ steps, updates happen **mid-episode**. The
+critic learns $V$, not $Q$: it is not choosing anything, so one number per state
+suffices, which is a strictly easier regression than DQN's.
+
+**5. Failure modes.**
+- **Two coupled learners.** The actor trusts a critic that is itself learning.
+  Early on $V$ is nonsense, so advantages are nonsense, so the policy moves
+  badly — which changes the state distribution the critic is fitting. They can
+  oscillate or lock into a bad equilibrium.
+- **Bias.** Bootstrapping through an imperfect $V$ biases the gradient. Unlike
+  REINFORCE, the estimator is no longer unbiased.
+- **Still on-policy, still one step per batch.** Nothing yet allows reusing data.
+- **Entropy collapse**, as in stage 5.
+
+**6. The experiment.** `experiments/exp4_reinforce_vs_actor_critic.py` runs both
+parts: the direct gradient-variance probe, and learning curves across seeds
+(where variance shows up as the width of the band).
+
+**Part 1 — the estimator, measured directly.** 60 independent single-episode
+gradient estimates at identical (untrained) parameters:
+
+| weighting | mean pairwise cosine similarity | $\Vert$mean grad$\Vert$ / mean$\Vert$grad$\Vert$ |
+|---|---:|---:|
+| raw return $G_t$ (no baseline) | +0.006 | 0.101 |
+| centred and scaled (`--baseline norm`) | **+0.107** | **0.495** |
+
+The baseline does not change what the gradient estimates *on average* — that is
+the lemma above, and it is exact. What it changes is how much they disagree, and
+the effect is large: **18× the cosine agreement and ~5× the signal-to-noise**,
+from arithmetic that costs one mean and one standard deviation per batch.
+
+**Part 2 — what that variance costs.** Four seeds, 120,000 steps each:
+
+| variant | greedy reward (mean ± across-seed std) | per-seed results |
+|---|---|---|
+| REINFORCE, no baseline | 351.9 ± **156.2** | 500, **134**, 500, **274** |
+| REINFORCE, normalised | **500.0 ± 0.0** | 500, 500, 500, 500 |
+| Actor-Critic (n=32) | **500.0 ± 0.0** | 500, 500, 500, 500 |
+
+The unbaselined estimator is not merely slower — it is *unreliable*. Two of four
+seeds never got there, with identical hyperparameters and only the RNG differing.
+Adding a constant baseline takes the across-seed spread from 156.2 to exactly
+zero.
+
+**An honest caveat about this stage.** On CartPole the *constant* baseline
+already captures nearly all the available variance reduction, so Actor-Critic's
+learned, state-dependent $V(s)$ does not beat it on final score — both sit at
+500.0 ± 0.0. What the critic buys here is visible elsewhere in the log:
+
+| | updates from 120k steps | wall clock |
+|---|---:|---:|
+| REINFORCE (normalised) | 340–430 | 156–173 s |
+| Actor-Critic (n=32) | **3,060–4,043** | **54–67 s** |
+
+Roughly **ten times as many policy updates** from the same samples, at a third
+of the wall clock, because the advantage is available every 32 steps instead of
+once per episode. On a task with a longer horizon, or one where a good constant
+baseline does not exist because state values genuinely differ, that gap becomes
+a quality gap too. CartPole is not that task, and the table above should not be
+read as though it were.
+
+![REINFORCE vs Actor-Critic](results/plots/exp4_reinforce_vs_actor_critic.png)
+
+| | env steps | episodes | updates | training time | greedy evaluation |
+|---|---:|---:|---:|---:|---|
+| Actor-Critic (n = 32) | 200,203 | 1,029 | 6,721 | 145 s | **500.0 ± 0.0** (solved) |
+
+The update count is the structural change made concrete: REINFORCE managed 508
+updates from the same 200,000 environment steps, one per episode. Actor-Critic
+performed 6,721 — one per 30 steps — because a bootstrapped advantage does not
+have to wait for the episode to end.
+
+---
+
