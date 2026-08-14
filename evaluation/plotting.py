@@ -131,3 +131,66 @@ def plot_variance_bands(
     return save_figure(fig, path)
 
 
+def plot_gridworld_policy(
+    env,
+    q_table: np.ndarray,
+    path: str,
+    title: str = "Learned greedy policy",
+) -> str:
+    """Arrow map of argmax_a Q(s,a) over the grid, shaded by state value V(s)."""
+    rows, cols = env.rows, env.cols
+    values = q_table.max(axis=1).reshape(rows, cols)
+    greedy = q_table.argmax(axis=1).reshape(rows, cols)
+
+    masked = np.ma.array(values, mask=~env.walkable_mask())
+    fig, ax = plt.subplots(figsize=(1.15 * cols + 2.0, 1.15 * rows + 1.2))
+    cmap = plt.get_cmap("YlGnBu").copy()
+    cmap.set_bad("#3a3a3a")
+    im = ax.imshow(masked, cmap=cmap)
+    fig.colorbar(im, ax=ax, label="V(s) = max_a Q(s,a)", fraction=0.046)
+
+    # Arrow directions come straight from the environment's (dr, dc) deltas, so
+    # the picture cannot drift out of sync with the action ordering.
+    for r in range(rows):
+        for c in range(cols):
+            cell = (r, c)
+            if cell in env.walls:
+                ax.text(c, r, "wall", ha="center", va="center", color="white", fontsize=7)
+                continue
+            if cell in env.terminals:
+                ax.text(
+                    c, r, f"{env.terminals[cell]:+.0f}",
+                    ha="center", va="center", fontsize=12, fontweight="bold", color="black",
+                )
+                continue
+            dr, dc = env.action_deltas[int(greedy[r, c])]
+            dy, dx = 0.3 * dr, 0.3 * dc
+            ax.arrow(c - dx, r - dy, 1.6 * dx, 1.6 * dy,
+                     head_width=0.16, head_length=0.13, fc="black", ec="black", linewidth=1.2)
+            # Flip the label to white on the dark end of the colormap, or the
+            # highest-value cells -- the interesting ones -- become unreadable.
+            span = float(masked.max() - masked.min()) or 1.0
+            shade = (values[r, c] - float(masked.min())) / span
+            ax.text(c, r + 0.42, f"{values[r, c]:.2f}", ha="center", va="center",
+                    fontsize=6.5, color="white" if shade > 0.6 else "#222222")
+
+    ax.set_xticks(range(cols))
+    ax.set_yticks(range(rows))
+    ax.set_xticks(np.arange(-0.5, cols, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, rows, 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.2)
+    ax.tick_params(which="minor", length=0)
+    ax.set_title(title)
+    return save_figure(fig, path)
+
+
+def plot_q_convergence(deltas, path: str, title: str = "Q-table convergence") -> str:
+    """max |Q_{t+1} - Q_t| per episode, on a log axis."""
+    fig, ax = plt.subplots(figsize=(9, 4))
+    ax.plot(deltas, color=PALETTE[2], linewidth=1.2)
+    ax.set_yscale("log")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel(r"max$_{s,a}$ |$\Delta Q$|")
+    ax.set_title(title)
+    ax.grid(alpha=0.25, which="both")
+    return save_figure(fig, path)
