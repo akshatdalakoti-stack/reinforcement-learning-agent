@@ -109,3 +109,14 @@ class PeriodicEvaluator:
     def best(self) -> float:
         return max((r for _, r in self.history), default=float("nan"))
 
+    @property
+    def final(self) -> float:
+        return self.history[-1][1] if self.history else float("nan")
+
+    def steps_to(self, threshold: float) -> int | None:
+        """Environment steps at the *first* evaluation reaching ``threshold``."""
+        for steps, reward in self.history:
+            if reward >= threshold:
+                return steps
+        return None
+
