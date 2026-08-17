@@ -231,3 +231,46 @@ def test_ppo_clipping_gradients():
     """The clip must kill the gradient outside the region -- but the min() must
     keep it alive when the policy needs to come back."""
 
+    def surrogate_grad(ratio_value: float, advantage: float, eps: float = 0.2) -> float:
+        adv = torch.tensor([advantage])
+        log_ratio = torch.tensor([np.log(ratio_value)], requires_grad=True)
+        ratio = log_ratio.exp()
+        loss = -torch.min(ratio * adv,
+                          torch.clamp(ratio, 1 - eps, 1 + eps) * adv).mean()
+        loss.backward()
+        return float(log_ratio.grad.abs().item())
+
+    check("ppo: gradient is live inside the trust region",
+          surrogate_grad(1.0, 1.0) > 1e-6)
+    check("ppo: gradient vanishes past the clip (A>0, r>1+eps)",
+          surrogate_grad(1.5, 1.0) < 1e-9, f"grad {surrogate_grad(1.5, 1.0):.3e}")
+    check("ppo: gradient vanishes past the clip (A<0, r<1-eps)",
+          surrogate_grad(0.5, -1.0) < 1e-9, f"grad {surrogate_grad(0.5, -1.0):.3e}")
+    # The asymmetric cases the min() exists to protect: the policy has drifted
+    # the *wrong* way and must be pulled back, so the gradient must survive.
+    check("ppo: min() keeps the gradient live for recovery (A>0, r<1-eps)",
+          surrogate_grad(0.5, 1.0) > 1e-6)
+    check("ppo: min() keeps the gradient live for recovery (A<0, r>1+eps)",
+          surrogate_grad(1.5, -1.0) > 1e-6)
+
+
+def test_ppo_ratio_starts_at_one():
+    """Before any update pi_new == pi_old, so every ratio must be exactly 1."""
+    from ppo.agent import PPOAgent
+
+    agent = PPOAgent(obs_dim=4, n_actions=2, rollout_size=32, seed=0)
+    states = np.random.randn(32, 4).astype(np.float32)
+    actions, log_probs = [], []
+    for s in states:
+        a, lp, _ = agent.act_with_value(s)
+        actions.append(a)
+        log_probs.append(lp)
+    new_lp, _, _ = agent.policy_value_net.evaluate_actions(
+        torch.as_tensor(states), torch.as_tensor(actions)
+    )
+    ratio = (new_lp - torch.as_tensor(log_probs)).exp()
+    check("ppo: ratio is exactly 1 before any optimisation step",
+          torch.allclose(ratio, torch.ones_like(ratio), atol=1e-5),
+          f"max deviation {(ratio - 1).abs().max():.2e}")
+
+
