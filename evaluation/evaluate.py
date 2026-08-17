@@ -93,3 +93,19 @@ class PeriodicEvaluator:
         self._next_at = self.every
         self.history: list[tuple[int, float]] = []
 
+    def maybe_evaluate(self, agent: Actor, env_steps: int) -> float | None:
+        """Evaluate if the step counter has passed the next checkpoint."""
+        if self.every <= 0 or env_steps < self._next_at:
+            return None
+        while self._next_at <= env_steps:
+            self._next_at += self.every
+        result = evaluate_agent(
+            agent, self.env, episodes=self.episodes, seed=self.seed + len(self.history) * 100
+        )
+        self.history.append((env_steps, result["mean_reward"]))
+        return result["mean_reward"]
+
+    @property
+    def best(self) -> float:
+        return max((r for _, r in self.history), default=float("nan"))
+
