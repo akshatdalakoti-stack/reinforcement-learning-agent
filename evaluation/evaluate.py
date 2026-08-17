@@ -70,3 +70,26 @@ def evaluate_agent(
     }
 
 
+class PeriodicEvaluator:
+    """Run a short greedy evaluation every ``every`` environment steps.
+
+    Why this exists: on CartPole with ``epsilon = 0.05``, a single random action
+    can end an episode, so the *training* reward of a fully-trained DQN keeps
+    oscillating between ~90 and ~250 while its greedy policy scores a flat 500.
+    Judging an ablation by end-of-training episode reward therefore measures
+    exploration noise as much as learning.  Sampling the greedy policy on a
+    fixed schedule gives a signal that reflects what the agent has actually
+    learned, and makes ``best`` and ``final`` meaningful summary numbers.
+
+    The evaluation environment is separate from the training one and seeded from
+    a disjoint range, so evaluating never perturbs the training RNG stream.
+    """
+
+    def __init__(self, env, every: int = 5_000, episodes: int = 5, seed: int = 500_000):
+        self.env = env
+        self.every = int(every)
+        self.episodes = int(episodes)
+        self.seed = int(seed)
+        self._next_at = self.every
+        self.history: list[tuple[int, float]] = []
+
