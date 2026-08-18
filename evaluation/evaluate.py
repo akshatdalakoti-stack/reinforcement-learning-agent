@@ -192,3 +192,40 @@ def _load_agent(checkpoint: str, device: str):
     raise ValueError(f"unrecognised checkpoint format: {sorted(keys)}")
 
 
+def main(argv=None) -> dict[str, Any]:
+    p = argparse.ArgumentParser(description="Evaluate a saved checkpoint")
+    p.add_argument("--checkpoint", required=True)
+    p.add_argument("--env", default="CartPole-v1",
+                   help="Gymnasium id, or 'GridWorld' for the hand-written MDP")
+    p.add_argument("--episodes", type=int, default=20)
+    p.add_argument("--seed", type=int, default=10_000)
+    p.add_argument("--device", default="auto")
+    p.add_argument("--render", action="store_true", help="open a window (Gymnasium only)")
+    args = p.parse_args(argv)
+
+    from evaluation.utils import get_device
+
+    device = str(get_device(args.device))
+    agent, kind = _load_agent(args.checkpoint, device)
+
+    if args.env.lower() == "gridworld":
+        from environments.gridworld import GridWorld
+
+        env = GridWorld()
+        threshold = None
+    else:
+        from environments.registry import make_env
+
+        env = make_env(args.env, seed=args.seed,
+                       render_mode="human" if args.render else None)
+        threshold = env.spec.reward_threshold if env.spec else None
+
+    print(f"[evaluate] {kind} checkpoint on {args.env} (device={device})")
+    result = evaluate_agent(agent, env, episodes=args.episodes, seed=args.seed)
+    print(format_report(args.checkpoint, result, threshold))
+    env.close()
+    return result
+
+
+if __name__ == "__main__":
+    main()
