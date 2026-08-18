@@ -144,3 +144,51 @@ class PeriodicEvaluator:
         return sum(r >= threshold for _, r in self.history) / len(self.history)
 
 
+def format_report(name: str, result: dict[str, Any], threshold: float | None = None) -> str:
+    lines = [
+        f"  {name}",
+        f"    mean reward   {result['mean_reward']:+.2f} +/- {result['std_reward']:.2f}"
+        f"  (over {result['episodes']} episodes)",
+        f"    min / median / max   {result['min_reward']:+.1f} /"
+        f" {result['median_reward']:+.1f} / {result['max_reward']:+.1f}",
+        f"    mean length   {result['mean_length']:.1f}",
+    ]
+    if threshold is not None:
+        verdict = "SOLVED" if result["mean_reward"] >= threshold else "not solved"
+        lines.append(f"    threshold {threshold:+.1f} -> {verdict}")
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------------ CLI
+def _load_agent(checkpoint: str, device: str):
+    """Dispatch on file extension: .npz is a Q-table, .pt is a torch agent."""
+    if checkpoint.endswith(".npz"):
+        from q_learning.agent import QLearningAgent
+
+        agent = QLearningAgent.load(checkpoint)
+        agent.epsilon = 0.0
+        return agent, "q_learning"
+
+    import torch
+
+    ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    keys = set(ckpt.keys())
+    if "online_net" in keys:
+        from dqn.agent import DQNAgent
+
+        return DQNAgent.load(checkpoint, device=device), "dqn"
+    if "actor" in keys and "critic" in keys:
+        from actor_critic.agent import ActorCriticAgent
+
+        return ActorCriticAgent.load(checkpoint, device=device), "actor_critic"
+    if "policy_value_net" in keys:
+        from ppo.agent import PPOAgent
+
+        return PPOAgent.load(checkpoint, device=device), "ppo"
+    if "policy" in keys:
+        from reinforce.agent import ReinforceAgent
+
+        return ReinforceAgent.load(checkpoint, device=device), "reinforce"
+    raise ValueError(f"unrecognised checkpoint format: {sorted(keys)}")
+
+
