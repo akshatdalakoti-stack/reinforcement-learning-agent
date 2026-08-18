@@ -872,3 +872,162 @@ have to wait for the episode to end.
 
 ---
 
+### Stage 7 — PPO
+
+> `ppo/` · LunarLander-v3 · `python -m ppo.train --env LunarLander-v3 --total-steps 600000`
+
+**1. The problem it solves.** Reusing on-policy data safely — many gradient
+steps per batch instead of one.
+
+**2. Why stage 6 is insufficient.** Every policy-gradient method so far throws
+its data away after a single step. That is not squeamishness, it is forced: the
+estimator is an expectation over the *current* policy, so the instant $\theta$
+moves, the collected data is off-policy and the estimator is biased. With a
+2048-step rollout and one gradient step, sample efficiency is poor.
+
+**3. The mathematical idea, in two parts.**
+
+*Importance sampling* makes reuse possible:
+
+$$\mathbb{E}_{a \sim \pi_{\text{old}}}\!\left[\frac{\pi_\theta(a|s)}{\pi_{\text{old}}(a|s)} A(s,a)\right], \qquad r(\theta) = \frac{\pi_\theta(a|s)}{\pi_{\text{old}}(a|s)}$$
+
+But it is only trustworthy while the policies are close. As $r$ departs from 1
+the variance explodes, and worse, maximising $r A$ with no constraint drives
+$r \to \infty$ wherever $A > 0$. One large step off a noisy advantage gives a
+policy that is both bad *and* badly estimated — and unlike supervised learning
+there is no fixed dataset to recover from, because the broken policy collects the
+next batch. That is **performance collapse**.
+
+*Clipping* bounds it. TRPO used a hard KL constraint and second-order
+optimisation; PPO gets most of the benefit first-order:
+
+$$\mathcal{L}^{\text{CLIP}}(\theta) = \mathbb{E}\Big[\min\big(r(\theta)A,\ \ \text{clip}(r(\theta), 1-\epsilon, 1+\epsilon)A\big)\Big]$$
+
+The asymmetry is the whole idea:
+
+- $A > 0$: raising $r$ raises the objective, but the clipped term caps at
+  $(1+\epsilon)A$. Past that the `min` selects the clipped branch, which is
+  *constant in $\theta$*, so **its gradient is zero**. The incentive to keep
+  pushing disappears.
+- $A < 0$: lowering $r$ raises the objective; the clipped term floors at
+  $(1-\epsilon)A$, and the `min` again selects it once $r < 1-\epsilon$.
+
+So the objective is a **pessimistic lower bound**: it takes the less optimistic
+of the clipped and unclipped estimates. There is no barrier and no constraint —
+the gradient simply goes flat outside the trust region, which is why plain Adam
+can optimise it.
+
+*Why `min` and not just `clip`.* Using `clip(r)A` alone would zero the gradient
+whenever $r$ left the region **in either direction**, including when the policy
+has already drifted too far and needs to come *back*. The `min` keeps the
+unclipped term active in exactly that case. Dropping it is a classic way to get
+a PPO that silently cannot recover from a bad update.
+
+*GAE.* A2C picks one $n$; GAE exponentially averages over all $n$ at once:
+
+$$A_t^{\text{GAE}} = \sum_{l \ge 0} (\gamma\lambda)^l \delta_{t+l} \quad\Longleftrightarrow\quad A_t = \delta_t + \gamma\lambda(1-d_t)A_{t+1}$$
+
+$\lambda = 0$ is the one-step TD error, $\lambda = 1$ is Monte-Carlo; $\lambda
+\approx 0.95$ is a finer dial on the same bias/variance axis.
+
+**4. How training changes.** The loop stops being episode-shaped. PPO collects a
+fixed-size rollout that deliberately **crosses episode boundaries**, then runs
+several epochs of shuffled minibatch SGD on it:
+
+$$\mathcal{L}_{\text{total}} = \underbrace{-\,\mathcal{L}^{\text{CLIP}}}_{\text{actor}} + \underbrace{c_v \mathcal{L}^{\text{VF}}}_{\text{critic}} - \underbrace{c_e\, \mathcal{H}[\pi_\theta]}_{\text{entropy}}$$
+
+Mind the first sign: $\mathcal{L}^{\text{CLIP}}$ above is an objective to be
+*maximised*, so the quantity actually handed to the optimiser negates it. The
+entropy term is negated for the opposite reason — we want entropy high, so
+minimising $-\mathcal{H}$ pays the policy to stay uncertain.
+
+Storing $\log\pi_{\text{old}}$ and $V_{\text{old}}$ at collection time is what
+makes this a PPO buffer rather than an A2C one — after the first epoch the
+network is no longer the policy that gathered the data, and $\log\pi_{\text{old}}$
+is what lets PPO *measure* the drift it is bounding.
+
+**5. Failure modes.**
+- **Entropy collapse.** Clipping bounds each step, not cumulative drift. Over
+  many updates the policy can still become deterministic and stop exploring.
+  Watch `entropy` fall toward 0.
+- **Too many epochs.** Each epoch pushes further from $\pi_{\text{old}}$; once
+  most samples are clipped the extra epochs compute zero-gradient batches.
+  `clip_fraction` and `approx_kl` are the metrics to watch, and `--target-kl`
+  is the safety net.
+- **Value/policy interference.** With a shared trunk the value loss is
+  numerically much larger and can swamp the policy gradient — hence `value_coef`,
+  and `--separate-networks` to test the choice.
+- **Clipping is a heuristic, not a guarantee.** It bounds the ratio per sample,
+  which is not the same as bounding the KL divergence.
+
+**6. The experiment.** `experiments/exp5_ppo_clipping.py`. The clean control is
+not "PPO vs A2C" — that changes several things at once. It is *the same PPO
+agent, same rollouts, same epochs, with the clip range set so wide it never
+binds* (`--clip-epsilon 10`). That variant is precisely "importance-weighted
+policy gradient with 10 epochs of reuse", which is the thing clipping was
+invented to fix.
+
+Three seeds, 80,000 environment steps on CartPole-v1:
+
+| variant | greedy reward | mean KL/update | max KL | clip fraction | collapses |
+|---|---|---:|---:|---:|---:|
+| **PPO, clip 0.2, 10 epochs** | **488.6 ± 13.6** | 0.0041 | 0.0076 | 0.041 | **0.0** |
+| no clipping, 10 epochs | 207.0 ± 20.8 | **0.3500** | **1.8598** | 0.001 | **10.3** |
+| PPO, clip 0.2, 1 epoch | 377.1 ± 86.8 | 0.0002 | 0.0011 | 0.000 | 4.7 |
+| PPO, clip 0.05, 10 epochs | 481.2 ± 22.2 | 0.0005 | 0.0007 | 0.105 | 0.0 |
+
+Row 2 is the whole argument. Same agent, same rollouts, same ten epochs, same
+optimiser — only the trust region is removed. The policy then moves **243×
+further per update** (max KL 1.86 vs 0.0076), suffers **10.3 collapse events per
+run** instead of zero, and ends at less than half the reward. This is
+performance collapse happening exactly where the theory says it should.
+
+Rows 3 and 4 rule out two cheaper explanations:
+
+- **Row 3** keeps clipping but takes only one epoch per rollout, so there is
+  almost no off-policy drift for the clip to bound. Its KL is tiny and it never
+  clips — yet it reaches only 377 ± 87, because it is throwing away nine tenths
+  of the optimisation it paid for in samples. So clipping is not merely a
+  safety device: it is what *buys* the extra epochs. **Clipping and multi-epoch
+  reuse are the same idea, and neither is worth much alone.**
+- **Row 4** tightens the region to 0.05. It clips 2.5× as often (0.105 vs
+  0.041), stays perfectly stable, and gives up a little final performance.
+  That is the conservative end of the dial behaving as advertised, and it
+  confirms the effect in row 1 comes from *bounding* the step rather than from
+  clipping being incidentally helpful.
+
+![PPO clipping ablation](results/plots/exp5_ppo_clipping.png)
+
+The unclipped run (red) is the shape to remember: it climbs to ~100, collapses
+to near zero, climbs again, collapses again — five or six times over. That is
+not noise, it is the trust region being absent. Note also that the curves end at
+different episode counts despite an identical 80,000-step budget: the good
+policies survive ~167 steps per episode and so fit fewer episodes into the
+budget, while the collapsing run averages ~47. The x-axis is episodes, so a
+*shorter* line here means a *better* agent.
+
+And the headline run, on the environment the whole progression was building
+toward:
+
+| | env steps | episodes | updates | training time | greedy evaluation |
+|---|---:|---:|---:|---:|---|
+| PPO on LunarLander-v3 | 599,800 | 1,959 | 293 (2,930 epochs) | 820 s | **250.3 ± 46.8** — solved (threshold 200) |
+| PPO on CartPole-v1 | 200,578 | 754 | 98 (980 epochs) | 336 s | **500.0 ± 0.0** — solved |
+
+Two details in the LunarLander curve are worth reading off the figure. Policy
+entropy starts at **1.382 nats** against a theoretical maximum of
+$\ln 4 = 1.386$ — the uniform distribution over four actions, confirming that
+the `gain=0.01` policy-head initialisation does what it claims — and falls to
+~0.57 as the policy commits.
+
+And mean episode length **rises to ~683 steps around episode 388, then falls
+back to ~283**. That non-monotonicity is the agent's curriculum, discovered on
+its own: it first learns to *hover*, because not crashing is worth far more than
+crashing, and only then learns to actually *land*, which is both higher-scoring
+and much faster. A reward curve alone would have shown steady improvement and
+hidden the fact that two different behaviours were being learned in sequence.
+
+![PPO on LunarLander](results/plots/ppo_lunarlander_curve.png)
+
+---
+
