@@ -120,3 +120,27 @@ class PeriodicEvaluator:
                 return steps
         return None
 
+    def steps_to_sustained(self, threshold: float) -> int | None:
+        """Environment steps from which *every later* evaluation holds ``threshold``.
+
+        The honest sample-efficiency number.  These learning curves are strongly
+        non-monotonic: on CartPole both DQN and Actor-Critic touch 485-500 within
+        the first 10k steps, collapse back below 100, and only recover much
+        later.  ``steps_to`` would credit them with solving the task almost
+        immediately, which is not a claim the run supports.  This asks the
+        stricter question -- when did it start working and *stay* working.
+        """
+        answer = None
+        for steps, reward in reversed(self.history):
+            if reward < threshold:
+                break
+            answer = steps
+        return answer
+
+    def fraction_above(self, threshold: float) -> float:
+        """Share of evaluations at or above ``threshold`` -- a stability measure."""
+        if not self.history:
+            return float("nan")
+        return sum(r >= threshold for _, r in self.history) / len(self.history)
+
+
