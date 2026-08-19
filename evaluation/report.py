@@ -149,3 +149,60 @@ def main(argv=None):
     return rows
 
 
+def plot_greedy_progression(args) -> None:
+    """Plot the periodic *greedy* evaluations -- the honest comparison.
+
+    Training reward penalises algorithms differently: DQN acts with
+    ``epsilon = 0.05``, and on CartPole a single random action can end an
+    episode, so its training curve oscillates violently while its greedy policy
+    is perfect.  Comparing algorithms on training reward would mostly compare
+    their exploration schemes.
+    """
+    import matplotlib.pyplot as plt
+
+    from evaluation.plotting import PALETTE, save_figure
+
+    from evaluation.metrics import moving_average
+
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    plotted = 0
+    for i, (display, run_name) in enumerate(CARTPOLE_CURVES):
+        loaded = load_run(run_name)
+        if loaded is None:
+            continue
+        _, cols = loaded
+        if "eval_reward" not in cols:
+            continue
+        mask = np.isfinite(cols["eval_reward"])
+        if not mask.any():
+            continue
+        steps, rewards = cols["env_steps"][mask], cols["eval_reward"][mask]
+        colour = PALETTE[i % len(PALETTE)]
+        # Faint raw points, bold 3-point average. Each evaluation is only 5
+        # episodes, so a single point carries real sampling noise on top of the
+        # genuine oscillation -- showing both keeps the figure honest and legible.
+        ax.plot(steps, rewards, color=colour, alpha=0.25, linewidth=0.9,
+                marker="o", markersize=2.5)
+        ax.plot(steps, moving_average(rewards, 3), color=colour,
+                linewidth=2.2, label=display)
+        plotted += 1
+
+    if plotted < 2:
+        plt.close(fig)
+        print("  (not enough runs with periodic evaluation for the greedy figure)")
+        return
+
+    ax.axhline(475, color="#555", linestyle="--", linewidth=1.2,
+               label="CartPole solved threshold (475)")
+    ax.set_xlabel("Environment steps")
+    ax.set_ylabel("Greedy evaluation reward")
+    ax.set_ylim(-15, 545)
+    ax.set_title("The progression on one task: greedy policy vs samples consumed")
+    ax.grid(alpha=0.25)
+    # Outside the axes: at 500 reward the curves cover every in-plot corner.
+    ax.legend(loc="center left", bbox_to_anchor=(1.01, 0.5), fontsize=9, frameon=False)
+    save_figure(fig, resolve_path(*PLOT_DIR, "progression_cartpole.png"))
+
+
+if __name__ == "__main__":
+    main()
