@@ -87,3 +87,65 @@ def build_table(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--window", type=int, default=50)
+    args = p.parse_args(argv)
+
+    rows = []
+    for run_name, display, stage in KNOWN_RUNS:
+        loaded = load_run(run_name)
+        if loaded is None:
+            print(f"  (skipping {run_name}: no logs found)")
+            continue
+        summary, cols = loaded
+        config = summary.get("config", {})
+        env = config.get("env_id") or config.get("env") or "GridWorld"
+        # Preferred source: the final greedy evaluation the trainer stored.
+        # Falls back to the last periodic evaluation for older logs.
+        final_eval = config.get("final_eval") or {}
+        eval_txt = None
+        if "mean_reward" in final_eval:
+            eval_txt = f"{final_eval['mean_reward']:.1f} +/- {final_eval['std_reward']:.1f}"
+            if final_eval.get("solved"):
+                eval_txt += " (solved)"
+        elif "final_q_star_gap" in final_eval:
+            eval_txt = (f"{final_eval['optimal_actions']}/{final_eval['decision_states']}"
+                        " optimal actions")
+        elif "eval_reward" in cols and np.isfinite(cols["eval_reward"]).any():
+            finite = cols["eval_reward"][np.isfinite(cols["eval_reward"])]
+            eval_txt = f"{finite[-1]:.1f}"
+        rows.append({
+            "stage": stage,
+            "name": display,
+            "env": env,
+            "env_steps": int(summary["env_steps"]),
+            "episodes": int(summary["episodes"]),
+            "time": float(summary["training_time_sec"]),
+            "eval": eval_txt,
+            "final_train": summary["final_performance_train"],
+        })
+
+    print("\n" + build_table(rows) + "\n")
+
+    curves = {}
+    for display, run_name in CARTPOLE_CURVES:
+        loaded = load_run(run_name)
+        if loaded is not None:
+            curves[display] = recorder_from_csv(display, loaded[1])
+
+    if len(curves) > 1:
+        plot_comparison(
+            curves,
+            resolve_path(*PLOT_DIR, "progression_cartpole_training.png"),
+            window=args.window,
+            title="CartPole-v1: training reward (includes exploration noise)",
+            x_axis="env_steps",
+        )
+    else:
+        print("  (not enough CartPole runs for the progression figure)")
+
+    plot_greedy_progression(args)
+    return rows
+
+
