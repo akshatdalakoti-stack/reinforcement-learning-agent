@@ -38,3 +38,13 @@ KNOWN_RUNS = [
     ("ppo_lunarlander", "PPO", 7),
 ]
 
+CARTPOLE_CURVES = [
+    ("DQN (no replay, no target)", "dqn_online"),
+    ("DQN + replay", "dqn_replay"),
+    ("DQN + replay + target", "dqn_cartpole"),
+    ("REINFORCE", "reinforce_cartpole"),
+    ("Actor-Critic", "actor_critic_cartpole"),
+    ("PPO", "ppo_cartpole"),
+]
+
+
