@@ -70,3 +70,20 @@ def recorder_from_csv(name: str, cols: dict) -> MetricsRecorder:
     return rec
 
 
+def build_table(rows: list[dict]) -> str:
+    header = (
+        "| # | algorithm | environment | env steps | episodes | train time | "
+        "final greedy eval |\n"
+        "|---|---|---|---:|---:|---:|---:|"
+    )
+    lines = [header]
+    for row in rows:
+        eval_txt = row["eval"] or "n/a"
+        lines.append(
+            f"| {row['stage']} | {row['name']} | {row['env']} | "
+            f"{row['env_steps']:,} | {row['episodes']:,} | "
+            f"{row['time']:.0f} s | {eval_txt} |"
+        )
+    return "\n".join(lines)
+
+
