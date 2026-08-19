@@ -1031,3 +1031,20 @@ hidden the fact that two different behaviours were being learned in sequence.
 
 ---
 
+### The progression on one task
+
+Stages 2–7 all run on CartPole-v1 in `run_all.py`, plotted against environment
+steps so that sample efficiency is directly comparable:
+
+![Progression on CartPole](results/plots/progression_cartpole.png)
+
+The curve plotted is the **greedy** policy, sampled every 5,000 environment
+steps. Plotting training reward instead would mostly compare exploration
+schemes: DQN acts with ε = 0.05 throughout, and on CartPole one random action
+ends the episode, so its training reward oscillates between roughly 90 and 250
+while the policy it would actually deploy scores a flat 500. That version of the
+figure is saved alongside as `progression_cartpole_training.png` — the contrast
+between the two is itself instructive.
+
+---
+
