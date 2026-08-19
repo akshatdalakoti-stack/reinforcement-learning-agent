@@ -48,3 +48,25 @@ CARTPOLE_CURVES = [
 ]
 
 
+def load_run(run_name: str) -> tuple[dict, dict] | None:
+    """Return ``(summary_json, csv_columns)`` for a run, or None if absent."""
+    log_dir = resolve_dir(*LOG_DIR)
+    json_path = os.path.join(log_dir, f"{run_name}.json")
+    csv_path = os.path.join(log_dir, f"{run_name}.csv")
+    if not (os.path.exists(json_path) and os.path.exists(csv_path)):
+        return None
+    with open(json_path, encoding="utf-8") as fh:
+        summary = json.load(fh)
+    return summary, MetricsRecorder.load_csv(csv_path)
+
+
+def recorder_from_csv(name: str, cols: dict) -> MetricsRecorder:
+    """Wrap raw CSV columns back into a recorder for plotting."""
+    rec = MetricsRecorder(run_name=name)
+    rec.episodes = [
+        {"reward": r, "env_steps": s, "length": l}
+        for r, s, l in zip(cols["reward"], cols["env_steps"], cols["length"])
+    ]
+    return rec
+
+
