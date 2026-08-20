@@ -97,3 +97,91 @@ def run_variant(
     }
 
 
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--episodes", type=int, default=6000)
+    p.add_argument("--seeds", type=int, default=5)
+    p.add_argument("--slip-prob", type=float, default=0.1)
+    args = p.parse_args(argv)
+
+    banner(
+        "Experiment 1: exploration coverage and step-size schedule",
+        "Tabular Q-learning vs the exact value-iteration solution",
+    )
+
+    variants = {
+        "fixed start, constant a": (False, "constant"),
+        "fixed start, a=1/n": (False, "visit_count"),
+        "exploring starts, constant a": (True, "constant"),
+        "exploring starts, a=1/n": (True, "visit_count"),
+    }
+
+    results: dict[str, list[dict]] = {}
+    for label, (exploring, schedule) in variants.items():
+        results[label] = [
+            run_variant(exploring, schedule, args.episodes, seed, args.slip_prob)
+            for seed in range(args.seeds)
+        ]
+
+    print(f"\n  {args.episodes} episodes x {args.seeds} seeds, slip_prob={args.slip_prob}\n")
+    header = f"  {'variant':<30}{'|Q-Q*|max':>12}{'optimal pi':>13}{'coverage':>11}{'min visits':>12}"
+    print(header)
+    print("  " + "-" * (len(header) - 2))
+
+    summary = {}
+    for label, runs in results.items():
+        gaps = np.array([r["final_gap"] for r in runs])
+        optimal = np.array([r["optimal_states"] for r in runs])
+        coverage = np.array([r["coverage"] for r in runs])
+        min_visits = np.array([r["min_visits"] for r in runs])
+        n_states = runs[0]["n_decision_states"]
+        print(f"  {label:<30}{gaps.mean():9.3f}   "
+              f"{optimal.mean():6.1f}/{n_states:<5} "
+              f"{coverage.mean():10.0%} {min_visits.mean():11.0f}")
+        summary[label] = {
+            "final_gap_mean": float(gaps.mean()),
+            "final_gap_std": float(gaps.std()),
+            "optimal_states_mean": float(optimal.mean()),
+            "n_decision_states": n_states,
+            "coverage_mean": float(coverage.mean()),
+            "min_visits_mean": float(min_visits.mean()),
+        }
+
+    # ---- figure: convergence to Q* --------------------------------------
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for i, (label, runs) in enumerate(results.items()):
+        curves = np.stack([r["gap_curve"] for r in runs])
+        mean, std = curves.mean(axis=0), curves.std(axis=0)
+        x = np.arange(curves.shape[1])
+        colour = PALETTE[i % len(PALETTE)]
+        ax.plot(x, mean, color=colour, linewidth=1.8, label=label)
+        ax.fill_between(x, mean - std, mean + std, color=colour, alpha=0.15)
+    ax.set_yscale("log")
+    # A single seed can momentarily land almost exactly on Q*, which on a log
+    # axis drags the limits down by three decades and squashes the region where
+    # all the real signal lives. Clamp to the informative range.
+    floor = max(1e-2, 0.5 * min(c.min() for c in
+                                (np.stack([r["gap_curve"] for r in runs]).mean(axis=0)
+                                 for runs in results.values())))
+    ax.set_ylim(floor, 2.0)
+    ax.set_xlabel("Episode")
+    ax.set_ylabel(r"max$_{s,a}$ |Q - Q*|  (log scale)")
+    ax.set_title("Distance to the exact optimum, mean +/- 1 std across seeds")
+    ax.grid(alpha=0.25, which="both")
+    ax.legend(loc="best", fontsize=9)
+    save_figure(fig, resolve_path(*PLOT_DIR, "exp1_exploring_starts.png"))
+
+    best = min(summary.items(), key=lambda kv: kv[1]["final_gap_mean"])
+    worst = max(summary.items(), key=lambda kv: kv[1]["final_gap_mean"])
+    print(f"\n  Reading: '{worst[0]}' leaves a gap of "
+          f"{worst[1]['final_gap_mean']:.3f}; '{best[0]}' gets it to "
+          f"{best[1]['final_gap_mean']:.3f}.")
+    print("  The update rule is identical in all four -- only which transitions")
+    print("  the agent sees, and how it averages them, differ.")
+
+    save_summary("exp1_exploring_starts", summary)
+    return summary
+
+
