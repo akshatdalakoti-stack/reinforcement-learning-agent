@@ -1048,3 +1048,60 @@ between the two is itself instructive.
 
 ---
 
+## Repository layout
+
+```
+rl-agent/
+├── environments/
+│   ├── gridworld.py        hand-written MDP + exact value iteration
+│   └── registry.py         Gymnasium factories, seeding, space introspection
+├── q_learning/             stage 1: Q-table, epsilon-greedy, Bellman update
+├── dqn/
+│   ├── network.py          the MLP that replaces the table
+│   ├── replay_buffer.py    stage 3: circular buffer, uniform sampling
+│   ├── agent.py            stages 2-4 in one class, replay/target as flags
+│   └── train.py
+├── reinforce/              stage 5: policy network, returns, log-prob loss
+├── actor_critic/           stage 6: separate Actor and Critic, TD advantage
+├── ppo/
+│   ├── networks.py         shared-trunk actor-critic
+│   ├── rollout.py          rollout storage + GAE
+│   ├── agent.py            clipped surrogate objective
+│   └── train.py
+├── evaluation/
+│   ├── metrics.py          per-episode recording, moving averages, CSV/JSON
+│   ├── plotting.py         learning curves, ablation bands, policy maps
+│   ├── evaluate.py         greedy rollouts, PeriodicEvaluator, checkpoint CLI
+│   ├── report.py           rebuild the summary table + figures from logs
+│   └── utils.py            seeding, device resolution, paths
+├── experiments/            exp1-exp5 + run_all.py
+├── checkpoints/            saved models
+├── results/{plots,logs}/   figures and per-episode CSVs
+├── tests_smoke.py          correctness checks for the hand-written maths
+├── requirements.txt
+└── README.md
+```
+
+Two utilities worth knowing about:
+
+```bash
+python tests_smoke.py       # 26 correctness checks, ~30 s
+python -m evaluation.report # rebuild tables/figures from logs, no retraining
+```
+
+`tests_smoke.py` targets the places where a bug would be invisible in a learning
+curve — it checks that the GridWorld sampler actually matches its own
+`transition_model()`, that value iteration's output satisfies the Bellman
+equation, that GAE reduces to the TD error at λ=0 and the Monte-Carlo advantage
+at λ=1, that the DQN target network receives no gradient and syncs exactly on
+schedule, that PPO's ratio starts at exactly 1 and its clipped objective has
+zero gradient outside the trust region *but a live one when the policy needs to
+come back*, and that every checkpoint round-trips to identical behaviour.
+
+Stages 2–4 deliberately share one `DQNAgent`. Replay and the target network are
+constructor flags, not subclasses, so the ablations compare identical code paths
+with exactly one idea removed. If they were separate classes, any difference in
+the curves could be an accident of implementation.
+
+---
+
