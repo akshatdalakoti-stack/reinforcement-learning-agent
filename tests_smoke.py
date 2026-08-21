@@ -274,3 +274,38 @@ def test_ppo_ratio_starts_at_one():
           f"max deviation {(ratio - 1).abs().max():.2e}")
 
 
+def test_policy_entropy_starts_maximal():
+    """The gain=0.01 policy head should make the initial policy near-uniform."""
+    from ppo.networks import ActorCriticNetwork
+
+    net = ActorCriticNetwork(obs_dim=8, n_actions=4)
+    entropy = float(net.distribution(torch.randn(256, 8)).entropy().mean().item())
+    check("init: initial policy entropy ~ ln(n_actions)",
+          abs(entropy - np.log(4)) < 0.02, f"{entropy:.4f} vs {np.log(4):.4f}")
+
+
+def test_checkpoint_roundtrip():
+    """Every agent must reload to identical greedy behaviour."""
+    import os
+    import tempfile
+
+    from actor_critic.agent import ActorCriticAgent
+    from dqn.agent import DQNAgent
+    from ppo.agent import PPOAgent
+    from reinforce.agent import ReinforceAgent
+
+    obs = np.random.randn(4).astype(np.float32)
+    tmp = tempfile.mkdtemp()
+    for name, agent in [
+        ("dqn", DQNAgent(obs_dim=4, n_actions=2, seed=0)),
+        ("reinforce", ReinforceAgent(obs_dim=4, n_actions=2, seed=0)),
+        ("actor_critic", ActorCriticAgent(obs_dim=4, n_actions=2, seed=0)),
+        ("ppo", PPOAgent(obs_dim=4, n_actions=2, seed=0)),
+    ]:
+        path = os.path.join(tmp, f"{name}.pt")
+        agent.save(path)
+        restored = type(agent).load(path, device="cpu")
+        check(f"checkpoint: {name} round-trips to the same greedy action",
+              agent.act(obs, greedy=True) == restored.act(obs, greedy=True))
+
+
