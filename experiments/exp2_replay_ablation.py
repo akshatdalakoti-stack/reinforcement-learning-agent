@@ -44,3 +44,11 @@ from evaluation.plotting import PALETTE, plot_variance_bands, save_figure
 from evaluation.utils import PLOT_DIR, resolve_path
 from experiments._common import banner, describe, save_summary
 
+VARIANTS = {
+    "(a) neither": ["--no-replay", "--no-target-network"],
+    "(b) replay only": ["--no-target-network"],
+    "(c) target net only": ["--no-replay"],
+    "(d) replay + target net": [],
+}
+
+
