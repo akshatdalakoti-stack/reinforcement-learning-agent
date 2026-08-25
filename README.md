@@ -1105,3 +1105,42 @@ the curves could be an accident of implementation.
 
 ---
 
+## Metrics, logs and reproducibility
+
+Every training run records, per episode:
+
+| metric | where |
+|---|---|
+| episode reward | all stages |
+| moving-average reward | computed by `metrics.moving_average` |
+| episode length | all stages |
+| training loss | DQN (Huber), REINFORCE/A2C (policy loss), PPO (total) |
+| policy entropy | REINFORCE, Actor-Critic, PPO |
+| environment steps | all stages — the sample-efficiency axis |
+| training time | all stages, via `MetricsRecorder.elapsed` |
+| periodic greedy evaluation | every 5,000 env steps (`--eval-every`), all deep stages |
+| final performance | greedy evaluation, exploration off, unseen seeds |
+
+Plus per-algorithm diagnostics: $\varepsilon$ and mean predicted $Q$ for DQN;
+gradient norm and return std for REINFORCE; value loss and mean $V$ for A2C;
+`clip_fraction` and `approx_kl` for PPO.
+
+Runs write `results/logs/<run_name>.csv` (one row per episode) and
+`<run_name>.json` (run summary), and figures to `results/plots/`.
+
+**Training reward is not final performance.** During training the agent is still
+exploring, so the logged reward measures the behaviour policy. Every reported
+"eval reward" in this README comes from `evaluation/evaluate.py`, running the
+greedy/deterministic policy on seeds the agent never trained on.
+
+Seeding covers Python's `random`, NumPy, PyTorch (CPU and CUDA), the Gymnasium
+environment, and each agent's own sampling RNG. Exact bit-level reproducibility
+across machines is still not guaranteed — BLAS reductions differ — but same
+machine, same seed reproduces. That was checked rather than assumed: re-running
+each stage from scratch reproduced its evaluation to the digit
+(REINFORCE 459.35 ± 56.09 and a +0.003 gradient cosine both times; online DQN
+9.65 ± 0.91 both times), and re-evaluating the saved checkpoints reproduced the
+same numbers a third time — which also confirms `save`/`load` is lossless.
+
+---
+
