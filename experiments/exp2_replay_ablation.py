@@ -170,3 +170,5 @@ def main(argv=None):
     return summary
 
 
+if __name__ == "__main__":
+    main()
