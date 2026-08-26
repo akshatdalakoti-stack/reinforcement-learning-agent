@@ -44,3 +44,21 @@ from reinforce.train import main as reinforce_main
 from reinforce.train import measure_gradient_variance, parse_args as reinforce_args
 
 
+def gradient_variance_probe(baseline: str, samples: int, seed: int) -> dict:
+    """Measure gradient agreement at a *fixed, untrained* policy.
+
+    Using an untrained policy is deliberate: it removes the confound that a
+    better policy produces different-length episodes, so the two baselines are
+    compared on the same data distribution.
+    """
+    args = reinforce_args(["--baseline", baseline, "--seed", str(seed)])
+    env = make_env("CartPole-v1", seed=seed)
+    from environments.registry import env_spec
+    from evaluation.utils import get_device
+
+    agent = build_reinforce(args, env_spec(env), get_device("cpu"))
+    stats = measure_gradient_variance(agent, env, samples, seed)
+    env.close()
+    return stats
+
+
