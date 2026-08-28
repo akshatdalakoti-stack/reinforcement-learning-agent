@@ -1144,3 +1144,59 @@ same numbers a third time — which also confirms `save`/`load` is lossless.
 
 ---
 
+## Implementation details that matter more than they look
+
+Things that are easy to get wrong and quietly cost you a working agent:
+
+**`terminated` vs `truncated`.** Gymnasium reports these separately and the
+distinction is not cosmetic. Termination means the MDP ended, so
+$V(s_{\text{next}}) = 0$. Truncation means a time limit fired while the future
+was still real, so you must keep bootstrapping. Storing a truncation as
+`done=True` teaches the agent that surviving to the time limit is worth exactly
+as much as failing — which caps every value estimate in the problem. Every
+training loop here passes `terminated` alone into the buffer and the TD target.
+
+**Detaching the target.** Q-learning is a fixed-point iteration, not a loss
+minimisation. If gradients flow into the TD target, the network can reduce the
+loss by moving the target toward its prediction instead of the reverse. Same for
+the advantage in stages 6–7: it is a *weight* on the log-probability, not
+something to differentiate through.
+
+**Huber over MSE.** Early TD errors can be huge; MSE turns them into
+proportionally huge gradients. `SmoothL1` is quadratic near zero and linear
+beyond, bounding the gradient without changing the minimiser.
+
+**Logits, not probabilities.** `Categorical(logits=...)` applies
+`log_softmax` internally. Computing probabilities first and taking their log can
+underflow to $-\infty$ and poison the gradient.
+
+**Random tie-breaking in `argmax`.** With a zero-initialised Q-table every action
+ties, and NumPy's `argmax` always returns index 0 — so the agent marches in one
+direction forever. `q_learning/agent.py` breaks ties uniformly.
+
+**Gradient steps per environment step.** Training every step with a large batch
+was what kept DQN pinned at ~90 reward here for several attempts. Dropping to
+one gradient step per 4 environment steps (`--train-freq 4`) was the change that
+made it solve the task — too much optimisation per sample overfits the buffer.
+
+**Adam's `eps` in PPO.** PPO uses `eps=1e-5`, not torch's `1e-8` default. Once
+most of a batch is clipped the gradients are near zero, and the smaller
+denominator stops Adam from taking enormous steps on numerical noise.
+
+**The state you bootstrap from at a rollout boundary.** PPO's rollouts cross
+episode boundaries, so the training loop calls `env.reset()` in the middle of
+collection. If you then hand `update()` the *current* `state`, and the rollout
+happened to fill up exactly on a terminal step, you are bootstrapping
+$V(s)$ from a freshly-reset observation belonging to a **different episode** —
+splicing two unrelated trajectories together at the seam. `ppo/train.py` tracks
+`boundary_state` / `boundary_done` separately from the loop's `state` for this
+reason. It fires rarely (roughly once per 300 rollouts at LunarLander episode
+lengths), which is exactly what makes it the kind of bug that survives for a
+long time. `tests_smoke.py` pins it.
+
+**Advantage normalisation is per minibatch in PPO**, per rollout in A2C. It
+keeps the effective policy step size stable as the reward scale changes during
+training. It is technically biased, and worth it.
+
+---
+
