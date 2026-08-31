@@ -232,3 +232,5 @@ def main(argv=None):
     return rows
 
 
+if __name__ == "__main__":
+    main()
