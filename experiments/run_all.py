@@ -19,3 +19,12 @@ from evaluation.utils import LOG_DIR, PLOT_DIR, resolve_path
 from experiments._common import banner
 
 
+def _fmt(value, spec=".1f"):
+    if value is None:
+        return "n/a"
+    try:
+        return format(value, spec)
+    except (TypeError, ValueError):
+        return str(value)
+
+
