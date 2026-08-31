@@ -28,3 +28,25 @@ def _fmt(value, spec=".1f"):
         return str(value)
 
 
+def main(argv=None):
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--quick", action="store_true", help="short budgets for a smoke test")
+    p.add_argument("--with-ablations", action="store_true", help="also run exp1-exp5")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--skip-lunar", action="store_true",
+                   help="train PPO on CartPole instead of LunarLander")
+    p.add_argument("--tag", type=str, default=None,
+                   help="suffix appended to every run name. Defaults to '_quick' "
+                        "under --quick so a smoke test cannot overwrite the "
+                        "canonical logs, checkpoints and figures.")
+    args = p.parse_args(argv)
+
+    scale = 0.2 if args.quick else 1.0
+    tag = args.tag if args.tag is not None else ("_quick" if args.quick else "")
+    def tagged(base: str) -> str:
+        """Append the run tag, so --quick never overwrites canonical results."""
+        return f"{base}{tag}"
+    seed = str(args.seed)
+    rows: list[dict] = []
+    started = time.perf_counter()
+
