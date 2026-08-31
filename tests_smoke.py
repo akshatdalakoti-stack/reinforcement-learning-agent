@@ -309,3 +309,34 @@ def test_checkpoint_roundtrip():
               agent.act(obs, greedy=True) == restored.act(obs, greedy=True))
 
 
+def main() -> int:
+    print("Smoke tests for the hand-written components\n")
+    for test in [
+        test_gridworld_transitions,
+        test_value_iteration_fixed_point,
+        test_q_learning_deterministic_convergence,
+        test_discounted_returns,
+        test_gae_limits,
+        test_gae_respects_done,
+        test_gae_terminal_at_rollout_boundary,
+        test_replay_buffer,
+        test_dqn_target_is_detached,
+        test_dqn_target_sync,
+        test_ppo_clipping_gradients,
+        test_ppo_ratio_starts_at_one,
+        test_policy_entropy_starts_maximal,
+        test_checkpoint_roundtrip,
+    ]:
+        print(f"\n{test.__name__}")
+        test()
+
+    print("\n" + "=" * 62)
+    if FAILURES:
+        print(f"  {len(FAILURES)} FAILED: {', '.join(FAILURES)}")
+        return 1
+    print("  all checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
