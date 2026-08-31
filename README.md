@@ -1200,3 +1200,18 @@ training. It is technically biased, and worth it.
 
 ---
 
+## References
+
+- Sutton & Barto, *Reinforcement Learning: An Introduction*, 2nd ed. — the MDP,
+  Bellman and TD material in Part I follows its notation.
+- Watkins & Dayan (1992), *Q-learning* — tabular convergence.
+- Mnih et al. (2015), *Human-level control through deep reinforcement learning* —
+  DQN, replay and target networks.
+- Williams (1992), *Simple statistical gradient-following algorithms* — REINFORCE.
+- Sutton et al. (2000), *Policy gradient methods for RL with function approximation*
+  — the policy gradient theorem and the baseline lemma.
+- Schulman et al. (2016), *High-dimensional continuous control using GAE* — GAE.
+- Schulman et al. (2017), *Proximal Policy Optimization Algorithms* — the clipped
+  surrogate.
+- van Hasselt et al. (2016), *Deep RL with Double Q-learning* — the overestimation
+  bias behind the optional `--double-dqn` flag.
